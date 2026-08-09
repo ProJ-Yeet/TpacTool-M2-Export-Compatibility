@@ -144,6 +144,54 @@
   <data name="Animation_ExportToSingleTpac" xml:space="preserve">
     <value>导出为单独TPAC</value>
   </data>
+  <data name="Animation_ExportAllToFbx" xml:space="preserve">
+    <value>按骨骼导出全部动作到FBX</value>
+  </data>
+  <data name="Animation_ExportTpacToFbx" xml:space="preserve">
+    <value>导出该tpac的同骨骼动作到FBX</value>
+  </data>
+  <data name="Animation_ExportAll_SelectFolder" xml:space="preserve">
+    <value>选择导出全部动作的文件夹</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSelectAnimFirst" xml:space="preserve">
+    <value>请先选择一个骨骼动作。</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllDone" xml:space="preserve">
+    <value>导出完成：已导出 {0} 个动作文件，跳过 {1} 个动作。</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSkeletonNotFound" xml:space="preserve">
+    <value>骨骼未找到或未加载：{0}</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSkipped" xml:space="preserve">
+    <value>跳过的动作（无有效骨骼）：{0}</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSkippedMore" xml:space="preserve">
+    <value>…… 及另外 {0} 个</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllFailed" xml:space="preserve">
+    <value>导出失败：{0}: {1}</value>
+  </data>
+  <data name="Animation_ExportClipsListToFbx" xml:space="preserve">
+    <value>按动画清单导出动作到FBX</value>
+  </data>
+  <data name="Animation_ExportClipsList_SelectFile" xml:space="preserve">
+    <value>选择动画清单文件</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListEmpty" xml:space="preserve">
+    <value>清单文件中没有找到动画名称。</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListFound" xml:space="preserve">
+    <value>动画清单：共 {0} 个名称，匹配 {1} 个，导出 {2} 个骨骼动作。</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListNotFound" xml:space="preserve">
+    <value>在已加载包中未找到：{0}</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListNoAnim" xml:space="preserve">
+    <value>动画清单中没有找到可导出的骨骼动作。（共 {0} 个名称，匹配 {1} 个）</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListAnimations" xml:space="preserve">
+    <value>将要导出的骨骼动作</value>
+  </data>
   <data name="Animation_Export_FrameRate" xml:space="preserve">
     <value>帧率</value>
   </data>

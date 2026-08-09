@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using JetBrains.Annotations;
 using TpacTool.Lib;
@@ -46,9 +47,11 @@ namespace TpacTool.IO
 		}
 
 		public static void ExportToFile([NotNull] AbstractModelExporter exporter, [NotNull] string path, [CanBeNull] Metamesh model,
-			[CanBeNull] Skeleton skeleton = null, 
+			[CanBeNull] Skeleton skeleton = null,
 			[CanBeNull] SkeletalAnimation animation = null, [CanBeNull] MorphAnimation morph = null,
-			ModelExportOption option = 0)
+			ModelExportOption option = 0, [CanBeNull] IEnumerable<SkeletalAnimation> animations = null,
+			[CanBeNull] IEnumerable<string> animationNames = null,
+			[CanBeNull] IEnumerable<Tuple<float, float>> animationFrameRanges = null)
 		{
 			if (model == null)
 				model = Metamesh.EmptyMesh;
@@ -100,6 +103,9 @@ namespace TpacTool.IO
 			exporter.Model = model;
 			exporter.Skeleton = skeleton;
 			exporter.Animation = animation;
+			exporter.Animations = animations?.ToList();
+			exporter.AnimationNames = animationNames?.ToList();
+			exporter.AnimationFrameRanges = animationFrameRanges?.ToList();
 			exporter.Morph = morph;
 			exporter.LodMask = lodMask;
 			exporter.FixBoneForBlender = option.HasFlag(ModelExportOption.FixBoneForBlender);

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using Assimp;
@@ -47,7 +48,7 @@ namespace TpacTool.IO.Assimp
 		}
 
 		public static void ExportToFile([NotNull] string path, [CanBeNull] Metamesh model,
-			[CanBeNull] Skeleton skeleton = null, 
+			[CanBeNull] Skeleton skeleton = null,
 			[CanBeNull] SkeletalAnimation animation = null, [CanBeNull] MorphAnimation morph = null,
 			ModelExporter.ModelExportOption option = 0, AssimpModelExportOption assimpOption = 0,
 			float animationFrameRate = 24f)
@@ -63,6 +64,24 @@ namespace TpacTool.IO.Assimp
 			}
 			else
 				ModelExporter.ExportToFile(path, model, skeleton, animation, morph, option);
+		}
+
+		// Batch export: multiple animation clips for one skeleton in a single fbx file.
+		public static void ExportToFile([NotNull] string path, [CanBeNull] Metamesh model,
+			[CanBeNull] Skeleton skeleton, [CanBeNull] IReadOnlyList<SkeletalAnimation> animations,
+			ModelExporter.ModelExportOption option = 0, AssimpModelExportOption assimpOption = 0,
+			float animationFrameRate = 24f, [CanBeNull] IEnumerable<string> animationNames = null,
+			[CanBeNull] IEnumerable<Tuple<float, float>> animationFrameRanges = null)
+		{
+			if (!path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+				throw new FormatException("Batch animation export only supports the fbx format");
+
+			var exporter = new FbxExporter
+			{
+				UseAsciiFormat = (assimpOption & AssimpModelExportOption.UseAscii) != 0,
+				AnimationFrameRate = animationFrameRate
+			};
+			ModelExporter.ExportToFile(exporter, path, model, skeleton, null, null, option, animations, animationNames, animationFrameRanges);
 		}
 
 		[Flags]

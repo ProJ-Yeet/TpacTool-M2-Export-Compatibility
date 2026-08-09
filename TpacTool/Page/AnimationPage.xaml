@@ -41,6 +41,15 @@
                             <Button VerticalAlignment="Top" Height="24" Margin="10,10,10,0" Content="{x:Static loc:Resources.Animation_ExportToFbx}" Command="{Binding ExportAnimationCommand, Mode=OneWay}" IsEnabled="{Binding CanExport, Mode=OneWay}"/>
                         </Grid>
                         <Grid Margin="0,0,0,10">
+                            <Button VerticalAlignment="Top" Height="24" Margin="10,0,10,0" Content="{x:Static loc:Resources.Animation_ExportAllToFbx}" Command="{Binding ExportAllAnimationsCommand, Mode=OneWay}" IsEnabled="{Binding CanExportAll, Mode=OneWay}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Button VerticalAlignment="Top" Height="24" Margin="10,0,10,0" Content="{x:Static loc:Resources.Animation_ExportTpacToFbx}" Command="{Binding ExportTpacAnimationCommand, Mode=OneWay}" IsEnabled="{Binding CanExportTpac, Mode=OneWay}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Button VerticalAlignment="Top" Height="24" Margin="10,0,10,0" Content="{x:Static loc:Resources.Animation_ExportClipsListToFbx}" Command="{Binding ExportClipsFromListCommand, Mode=OneWay}" IsEnabled="{Binding CanExportAll, Mode=OneWay}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
                             <Button VerticalAlignment="Top" Height="24" Margin="10,0,10,0" Content="{x:Static loc:Resources.Animation_ExportToSingleTpac}" Command="{Binding ExportSingleAssetCommand, Mode=OneWay}" Visibility="{Binding ShowExportButton, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
                         </Grid>
                         <GroupBox Header="{x:Static loc:Resources.Model_Export_Skeleton}">

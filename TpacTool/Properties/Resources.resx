@@ -144,6 +144,54 @@
   <data name="Animation_ExportToSingleTpac" xml:space="preserve">
     <value>Export as Single TPAC</value>
   </data>
+  <data name="Animation_ExportAllToFbx" xml:space="preserve">
+    <value>Export All Animations to FBX (by Skeleton)</value>
+  </data>
+  <data name="Animation_ExportTpacToFbx" xml:space="preserve">
+    <value>Export This TPAC's Skeleton Animations to FBX</value>
+  </data>
+  <data name="Animation_ExportAll_SelectFolder" xml:space="preserve">
+    <value>Select a folder to export all animations</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSelectAnimFirst" xml:space="preserve">
+    <value>Please select a skeletal animation first.</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllDone" xml:space="preserve">
+    <value>Export complete: {0} animation file(s) exported, {1} animation(s) skipped.</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSkeletonNotFound" xml:space="preserve">
+    <value>Skeleton not found or not loaded: {0}</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSkipped" xml:space="preserve">
+    <value>Animation skipped (no valid skeleton): {0}</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllSkippedMore" xml:space="preserve">
+    <value>... and {0} more</value>
+  </data>
+  <data name="Msgbox_AnimationExportAllFailed" xml:space="preserve">
+    <value>Export failed: {0}: {1}</value>
+  </data>
+  <data name="Animation_ExportClipsListToFbx" xml:space="preserve">
+    <value>Export Animations from Clip List to FBX</value>
+  </data>
+  <data name="Animation_ExportClipsList_SelectFile" xml:space="preserve">
+    <value>Select the animation clip list file</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListEmpty" xml:space="preserve">
+    <value>No clip names found in the selected list file.</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListFound" xml:space="preserve">
+    <value>Clip list: {0} name(s), {1} matched, exporting {2} skeletal animation(s).</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListNotFound" xml:space="preserve">
+    <value>Not found in loaded packages: {0}</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListNoAnim" xml:space="preserve">
+    <value>No exportable skeletal animation found from the clip list. ({0} names, {1} matched)</value>
+  </data>
+  <data name="Msgbox_AnimationExportClipsListAnimations" xml:space="preserve">
+    <value>Skeletal animations to export</value>
+  </data>
   <data name="Animation_Export_FrameRate" xml:space="preserve">
     <value>Frame Rate</value>
   </data>

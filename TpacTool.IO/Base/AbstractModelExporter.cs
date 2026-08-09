@@ -22,6 +22,16 @@ namespace TpacTool.IO
 
 		public SkeletalAnimation Animation { set; get; }
 
+		// multiple clips for one export (e.g. one fbx per skeleton containing all of its animations)
+		public List<SkeletalAnimation> Animations { set; get; }
+
+		// optional display names parallel to Animations (e.g. clip names taken from AnimationClip assets)
+		public List<string> AnimationNames { set; get; }
+
+		// optional (start, end) frame ranges parallel to Animations, one per exported clip;
+		// multiple clips sharing one SkeletalAnimation each get their own Source1..Source2 range
+		public List<Tuple<float, float>> AnimationFrameRanges { set; get; }
+
 		public MorphAnimation Morph { set; get; }
 
 		public bool FixBoneForBlender { set; get; } = true;

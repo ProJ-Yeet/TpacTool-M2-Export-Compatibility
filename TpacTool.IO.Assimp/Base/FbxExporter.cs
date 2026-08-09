@@ -46,9 +46,15 @@ namespace TpacTool.IO.Assimp
 
 		private static FieldInfo _nodesFi;
 
+		private static FieldInfo _propsFi;
+
 		static FbxExporter()
 		{
 			_nodesFi = typeof(FbxNodeList).GetField("_nodes", BindingFlags.Instance | BindingFlags.NonPublic);
+			// FbxNode.Properties is a getter that returns a fresh ToArray() copy every call, so
+			// writing to Properties[i] silently modifies a throwaway array. reach into the real
+			// backing list instead (same pattern as _nodesFi above).
+			_propsFi = typeof(FbxNode).GetField("_properties", BindingFlags.Instance | BindingFlags.NonPublic);
 		}
 
 		private long GenerateUid()
@@ -672,6 +678,47 @@ namespace TpacTool.IO.Assimp
 					connectionsNodes.Add(null);
 			}
 
+			// assign each clip its own start/end frame (AnimationClip.Source1..Source2) so clips
+			// that share one skeletal animation don't all start at frame 0
+			if (ClipFrameRanges.Count > 0)
+			{
+				var objects = doc["Objects"][0];
+				foreach (var node in objects.Nodes)
+				{
+					if (node == null || node.Identifier == null ||
+						node.Identifier.Value != "AnimationStack" || node.Properties.Length < 2)
+						continue;
+					if (!(node.Properties[1] is StringToken nameTok))
+						continue;
+					var clipName = nameTok.Value;
+					if (clipName.StartsWith("AnimStack::"))
+						clipName = clipName.Substring("AnimStack::".Length);
+					if (!ClipFrameRanges.TryGetValue(clipName, out var range))
+						continue;
+
+					// each stack keeps the clip's absolute frame range (AnimationClip.Source1..Source2)
+					// so animation viewers split the clips like the source; the extra rest-hold key
+					// sits just before Source1 and keeps Blender's re-export from shifting the rest
+					var startTime = ToFbxTime(range.Item1 / AnimationFrameRate);
+					var endTime = ToFbxTime(range.Item2 / AnimationFrameRate);
+					foreach (var child in node.Nodes)
+					{
+						if (child == null || child.Identifier == null ||
+							child.Identifier.Value != "Properties70")
+							continue;
+						foreach (var prop in child.Nodes)
+						{
+							if (prop == null || !(prop.Value is StringToken st))
+								continue;
+							if (st.Value == "LocalStart" || st.Value == "ReferenceStart")
+								SetPropertyValue(prop, startTime);
+							else if (st.Value == "LocalStop" || st.Value == "ReferenceStop")
+								SetPropertyValue(prop, endTime);
+						}
+					}
+				}
+			}
+
 			var memoryStream = new MemoryStream(data.Length);
 			if (UseAsciiFormat)
 			{
@@ -713,6 +760,17 @@ namespace TpacTool.IO.Assimp
 		private static float ToRealTime(long fbxTime)
 		{
 			return (float) (fbxTime / (double)FBX_SECOND);
+		}
+
+		// replaces the value token (index 4) of a "P" property node. FbxNode.Properties is a getter
+		// that returns a fresh ToArray() copy, so assigning Properties[4] writes a throwaway array;
+		// modify the private backing list instead.
+		private static void SetPropertyValue(FbxNode prop, long value)
+		{
+			if (prop == null || _propsFi == null)
+				return;
+			if (_propsFi.GetValue(prop) is List<Token> props && props.Count > 4)
+				props[4] = new LongToken(value);
 		}
 	}
 }

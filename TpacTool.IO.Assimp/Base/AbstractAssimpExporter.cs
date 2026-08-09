@@ -15,7 +15,12 @@ using Quaternion = Assimp.Quaternion;
 namespace TpacTool.IO.Assimp
 {
 	public abstract class AbstractAssimpExporter : AbstractModelExporter
-	{ 
+	{
+		// clip name -> (start frame, end frame), populated during Export and read by the fbx
+		// post-process to set each animation stack's LocalStart/LocalStop
+		protected readonly Dictionary<string, Tuple<float, float>> ClipFrameRanges =
+			new Dictionary<string, Tuple<float, float>>();
+
 		public abstract string AssimpFormatId { get; }
 
 		public abstract bool SupportTRSInAnimation { get; }
@@ -71,7 +76,22 @@ namespace TpacTool.IO.Assimp
 					modelNode.MeshIndices.Add(i);
 				}
 
-				if (Animation != null)
+				if (Animations != null && Animations.Count > 0)
+				{
+					var rootNodeName = Skeleton != null ? skeletonNode.Name : modelNode.Name;
+					for (var i = 0; i < Animations.Count; i++)
+					{
+						var name = AnimationNames != null && i < AnimationNames.Count ? AnimationNames[i] : null;
+						float startFrame = 0f, endFrame = -1f;
+						if (AnimationFrameRanges != null && i < AnimationFrameRanges.Count && AnimationFrameRanges[i] != null)
+						{
+							startFrame = AnimationFrameRanges[i].Item1;
+							endFrame = AnimationFrameRanges[i].Item2;
+						}
+						scene.Animations.Add(ExportAnimation(rootNodeName, Animations[i], name, startFrame, endFrame));
+					}
+				}
+				else if (Animation != null)
 				{
 					scene.Animations.Add(ExportAnimation(Skeleton != null ? skeletonNode.Name : modelNode.Name));
 				}
@@ -344,13 +364,40 @@ namespace TpacTool.IO.Assimp
 
 		public Animation ExportAnimation(string rootNodeName)
 		{
+			return ExportAnimation(rootNodeName, Animation, null);
+		}
+
+		public Animation ExportAnimation(string rootNodeName, SkeletalAnimation animation)
+		{
+			return ExportAnimation(rootNodeName, animation, null);
+		}
+
+		public Animation ExportAnimation(string rootNodeName, SkeletalAnimation animation, string name,
+			float startFrame = 0f, float endFrame = -1f)
+		{
 			var assAnim = new Animation();
 
-			assAnim.Name = Animation.Name;
-			assAnim.DurationInTicks = Animation.Duration;
+			assAnim.Name = name ?? animation.Name;
+			var data = animation.Definition.Data;
+			// each clip carries its own start/end frame range (AnimationClip.Source1..Source2);
+			// default to the whole animation when no range is given
+			var maxFrame = GetAnimationMaxFrame(data);
+			if (endFrame < 0f)
+				endFrame = maxFrame;
+			startFrame = Math.Max(0f, startFrame);
+			endFrame = Math.Min(maxFrame, endFrame);
+			if (endFrame < startFrame)
+				endFrame = startFrame;
+			// clip keys keep their absolute Source1..Source2 positions so animation viewers split
+			// the stacks into the original frame ranges (e.g. 1-134, 135-268) instead of 0-based
+			// clips. mDuration must be the absolute end frame: if it is smaller than the key times
+			// (the old endFrame-startFrame length) assimp writes the keys out of range and Blender
+			// cannot preview the animation.
+			assAnim.DurationInTicks = endFrame;
 			assAnim.TicksPerSecond = AnimationFrameRate;
+			if (name != null)
+				ClipFrameRanges[name] = Tuple.Create(startFrame, endFrame);
 
-			var data = Animation.Definition.Data;
 			var rootHasPos = data.HasRootPositionTransform();
 			var rootHasScale = data.HasRootScaleTransform();
 
@@ -385,6 +432,8 @@ namespace TpacTool.IO.Assimp
 					{
 						foreach (var frame in data.RootPositionFrames)
 						{
+							if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+								continue;
 							timeSet.Add(frame.Value.Time);
 						}
 					}
@@ -392,6 +441,8 @@ namespace TpacTool.IO.Assimp
 					{
 						foreach (var frame in data.RootScaleFrames)
 						{
+							if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+								continue;
 							timeSet.Add(frame.Value.Time);
 						}
 					}
@@ -461,6 +512,13 @@ namespace TpacTool.IO.Assimp
 					}
 				}
 
+				// a sub-clip starts mid-animation; hold the bone at rest for one frame just before
+				// the clip so Blender's re-export keeps the true rest pose (otherwise it writes the
+				// first animation frame as the bone rest and Unity's bind pose breaks)
+				if (startFrame > 0f)
+					InsertRestHold(channel, new Quaternion(1, 0, 0, 0), new Vector3D(0, 0, 0),
+						Math.Max(0f, startFrame - 1f));
+
 				assAnim.NodeAnimationChannels.Add(channel);
 			}
 
@@ -500,6 +558,8 @@ namespace TpacTool.IO.Assimp
 						{
 							foreach (var frame in boneAnim.PositionFrames)
 							{
+								if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+									continue;
 								timeSet.Add(frame.Value.Time);
 							}
 						}
@@ -507,6 +567,8 @@ namespace TpacTool.IO.Assimp
 						{
 							foreach (var frame in boneAnim.RotationFrames)
 							{
+								if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+									continue;
 								timeSet.Add(frame.Value.Time);
 							}
 						}
@@ -588,7 +650,7 @@ namespace TpacTool.IO.Assimp
 						restMatrix.M44 = 1;
 
 					System.Numerics.Matrix4x4.Decompose(restMatrix, out _,
-						out _,
+						out var restRot,
 						out var trans);
 
 					var posList = channel.PositionKeys;
@@ -608,11 +670,53 @@ namespace TpacTool.IO.Assimp
 						rotList[j] = new QuaternionKey(rotList[j].Time, quat);
 					}
 
+					// a sub-clip starts mid-animation; hold the bone at rest for one frame just
+					// before the clip so Blender's re-export keeps the true rest pose
+					if (startFrame > 0f)
+						InsertRestHold(channel, restRot.ToAssimpQuaternion(),
+							new Vector3D(trans.X, trans.Y, trans.Z), Math.Max(0f, startFrame - 1f));
+
 					assAnim.NodeAnimationChannels.Add(channel);
 				}
 			}
 
 			return assAnim;
+		}
+
+		// Returns the highest keyframe time (in frames) across every channel of the animation,
+		// used as the clip length so exported clips end at the last real keyframe.
+		private static float GetAnimationMaxFrame(AnimationDefinitionData data)
+		{
+			float max = 0f;
+			if (data.RootPositionFrames.Count > 0)
+				max = Math.Max(max, data.RootPositionFrames.Keys[data.RootPositionFrames.Count - 1]);
+			if (data.RootScaleFrames.Count > 0)
+				max = Math.Max(max, data.RootScaleFrames.Keys[data.RootScaleFrames.Count - 1]);
+			foreach (var boneAnim in data.BoneAnims)
+			{
+				if (boneAnim == null)
+					continue;
+				if (boneAnim.PositionFrames.Count > 0)
+					max = Math.Max(max, boneAnim.PositionFrames.Keys[boneAnim.PositionFrames.Count - 1]);
+				if (boneAnim.RotationFrames.Count > 0)
+					max = Math.Max(max, boneAnim.RotationFrames.Keys[boneAnim.RotationFrames.Count - 1]);
+			}
+			return max;
+		}
+
+		// inserts a rest-pose key just before a sub-clip's keys. all clip keys sit at or after
+		// the start frame, so the hold (one frame earlier) always lands at index 0 and keeps the
+		// clip range itself intact. without it Blender's re-export bakes the first mid-motion
+		// frame into the bone rest and Unity ends up with a broken bind pose.
+		private void InsertRestHold(NodeAnimationChannel channel, Quaternion restRot, Vector3D restPos, float frame)
+		{
+			var t = frame / AnimationFrameRate;
+			if (channel.RotationKeys.Count > 0)
+				channel.RotationKeys.Insert(0, new QuaternionKey(t, restRot));
+			if (channel.PositionKeys.Count > 0)
+				channel.PositionKeys.Insert(0, new VectorKey(t, restPos));
+			if (channel.ScalingKeys.Count > 0)
+				channel.ScalingKeys.Insert(0, new VectorKey(t, new Vector3D(1, 1, 1)));
 		}
 
 		private System.Numerics.Matrix4x4 GetBoneRestFrame(BoneNode bone)

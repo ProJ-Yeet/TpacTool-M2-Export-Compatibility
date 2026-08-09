@@ -134,7 +134,103 @@ namespace TpacTool.Properties {
                 return ResourceManager.GetString("Animation_ExportToSingleTpac", resourceCulture);
             }
         }
-        
+
+        public static string Animation_ExportAllToFbx {
+            get {
+                return ResourceManager.GetString("Animation_ExportAllToFbx", resourceCulture);
+            }
+        }
+
+        public static string Animation_ExportTpacToFbx {
+            get {
+                return ResourceManager.GetString("Animation_ExportTpacToFbx", resourceCulture);
+            }
+        }
+
+        public static string Animation_ExportAll_SelectFolder {
+            get {
+                return ResourceManager.GetString("Animation_ExportAll_SelectFolder", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportAllSelectAnimFirst {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportAllSelectAnimFirst", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportAllDone {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportAllDone", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportAllSkeletonNotFound {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportAllSkeletonNotFound", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportAllSkipped {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportAllSkipped", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportAllSkippedMore {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportAllSkippedMore", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportAllFailed {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportAllFailed", resourceCulture);
+            }
+        }
+
+        public static string Animation_ExportClipsListToFbx {
+            get {
+                return ResourceManager.GetString("Animation_ExportClipsListToFbx", resourceCulture);
+            }
+        }
+
+        public static string Animation_ExportClipsList_SelectFile {
+            get {
+                return ResourceManager.GetString("Animation_ExportClipsList_SelectFile", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportClipsListEmpty {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportClipsListEmpty", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportClipsListFound {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportClipsListFound", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportClipsListNotFound {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportClipsListNotFound", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportClipsListNoAnim {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportClipsListNoAnim", resourceCulture);
+            }
+        }
+
+        public static string Msgbox_AnimationExportClipsListAnimations {
+            get {
+                return ResourceManager.GetString("Msgbox_AnimationExportClipsListAnimations", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   查找类似 1 的本地化字符串。
         /// </summary>
