@@ -386,17 +386,25 @@ namespace TpacTool.IO.Assimp
 				endFrame = maxFrame;
 			startFrame = Math.Max(0f, startFrame);
 			endFrame = Math.Min(maxFrame, endFrame);
-			if (endFrame < startFrame)
-				endFrame = startFrame;
-			// clip keys keep their absolute Source1..Source2 positions so animation viewers split
-			// the stacks into the original frame ranges (e.g. 1-134, 135-268) instead of 0-based
-			// clips. mDuration must be the absolute end frame: if it is smaller than the key times
-			// (the old endFrame-startFrame length) assimp writes the keys out of range and Blender
-			// cannot preview the animation.
-			assAnim.DurationInTicks = endFrame;
+			// a clip with Source1 > Source2 plays its range backward (Bannerlord reversed clips,
+			// e.g. the *_reverse variants). it is exported as a fresh forward animation whose
+			// content runs Source1 down to Source2: the keyframes are reordered and the stack
+			// range is 0-based instead of the absolute source range.
+			var reversed = endFrame < startFrame;
+			var rangeStart = Math.Min(startFrame, endFrame);
+			var rangeEnd = Math.Max(startFrame, endFrame);
+			// forward clips keep their absolute Source1..Source2 positions so animation viewers
+			// split the stacks into the original frame ranges (e.g. 1-134, 135-268) instead of
+			// 0-based clips. mDuration must be the absolute end frame: if it is smaller than the
+			// key times (the old endFrame-startFrame length) assimp writes the keys out of range
+			// and Blender cannot preview the animation. reversed clips start at 0 and include one
+			// extra rest-hold frame at the front.
+			assAnim.DurationInTicks = reversed ? rangeEnd - rangeStart + 1 : endFrame;
 			assAnim.TicksPerSecond = AnimationFrameRate;
 			if (name != null)
-				ClipFrameRanges[name] = Tuple.Create(startFrame, endFrame);
+				ClipFrameRanges[name] = reversed
+					? Tuple.Create(0f, rangeEnd - rangeStart + 1)
+					: Tuple.Create(startFrame, endFrame);
 
 			var rootHasPos = data.HasRootPositionTransform();
 			var rootHasScale = data.HasRootScaleTransform();
@@ -432,7 +440,7 @@ namespace TpacTool.IO.Assimp
 					{
 						foreach (var frame in data.RootPositionFrames)
 						{
-							if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+							if (frame.Value.Time < rangeStart || frame.Value.Time > rangeEnd)
 								continue;
 							timeSet.Add(frame.Value.Time);
 						}
@@ -441,17 +449,17 @@ namespace TpacTool.IO.Assimp
 					{
 						foreach (var frame in data.RootScaleFrames)
 						{
-							if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+							if (frame.Value.Time < rangeStart || frame.Value.Time > rangeEnd)
 								continue;
 							timeSet.Add(frame.Value.Time);
 						}
 					}
 
-					foreach (var time in timeSet)
+					foreach (var time in reversed ? timeSet.Reverse() : timeSet)
 					{
 						if (data.RootPositionFrames.TryGetValue(time, out var valuePos))
 						{
-							channel.PositionKeys.Add(new VectorKey(time / AnimationFrameRate, valuePos.Value.ToAssimpVec()));
+							channel.PositionKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, valuePos.Value.ToAssimpVec()));
 						}
 						else
 						{
@@ -472,12 +480,12 @@ namespace TpacTool.IO.Assimp
 									(time - prev.Value.Time) / (next.Value.Time - prev.Value.Time));
 							}
 
-							channel.PositionKeys.Add(new VectorKey(time / AnimationFrameRate, cur.ToAssimpVec()));
+							channel.PositionKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, cur.ToAssimpVec()));
 						}
 
 						if (data.RootScaleFrames.TryGetValue(time, out var valueScale))
 						{
-							channel.ScalingKeys.Add(new VectorKey(time / AnimationFrameRate, valueScale.Value.ToAssimpVec()));
+							channel.ScalingKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, valueScale.Value.ToAssimpVec()));
 						}
 						else
 						{
@@ -500,22 +508,24 @@ namespace TpacTool.IO.Assimp
 										(time - prev.Value.Time) / (next.Value.Time - prev.Value.Time));
 								}
 
-								channel.ScalingKeys.Add(new VectorKey(time / AnimationFrameRate, cur.ToAssimpVec()));
+								channel.ScalingKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, cur.ToAssimpVec()));
 							}
 							else
 							{
-								channel.ScalingKeys.Add(new VectorKey(time / AnimationFrameRate, new Vector3D(1, 1, 1)));
+								channel.ScalingKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, new Vector3D(1, 1, 1)));
 							}
 						}
 
-						channel.RotationKeys.Add(new QuaternionKey(time / AnimationFrameRate, new Quaternion(1, 0, 0, 0)));
+						channel.RotationKeys.Add(new QuaternionKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, new Quaternion(1, 0, 0, 0)));
 					}
 				}
 
 				// a sub-clip starts mid-animation; hold the bone at rest for one frame just before
 				// the clip so Blender's re-export keeps the true rest pose (otherwise it writes the
 				// first animation frame as the bone rest and Unity's bind pose breaks)
-				if (startFrame > 0f)
+				if (reversed)
+					InsertRestHold(channel, new Quaternion(1, 0, 0, 0), new Vector3D(0, 0, 0), 0f);
+				else if (startFrame > 0f)
 					InsertRestHold(channel, new Quaternion(1, 0, 0, 0), new Vector3D(0, 0, 0),
 						Math.Max(0f, startFrame - 1f));
 
@@ -558,7 +568,7 @@ namespace TpacTool.IO.Assimp
 						{
 							foreach (var frame in boneAnim.PositionFrames)
 							{
-								if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+								if (frame.Value.Time < rangeStart || frame.Value.Time > rangeEnd)
 									continue;
 								timeSet.Add(frame.Value.Time);
 							}
@@ -567,17 +577,17 @@ namespace TpacTool.IO.Assimp
 						{
 							foreach (var frame in boneAnim.RotationFrames)
 							{
-								if (frame.Value.Time < startFrame || frame.Value.Time > endFrame)
+								if (frame.Value.Time < rangeStart || frame.Value.Time > rangeEnd)
 									continue;
 								timeSet.Add(frame.Value.Time);
 							}
 						}
 
-						foreach (var time in timeSet)
+						foreach (var time in reversed ? timeSet.Reverse() : timeSet)
 						{
 							if (boneAnim.PositionFrames.TryGetValue(time, out var valuePos))
 							{
-								channel.PositionKeys.Add(new VectorKey(time / AnimationFrameRate, valuePos.Value.ToAssimpVec()));
+								channel.PositionKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, valuePos.Value.ToAssimpVec()));
 							}
 							else
 							{
@@ -600,17 +610,17 @@ namespace TpacTool.IO.Assimp
 											(time - prev.Value.Time) / (next.Value.Time - prev.Value.Time));
 									}
 
-									channel.PositionKeys.Add(new VectorKey(time / AnimationFrameRate, cur.ToAssimpVec()));
+									channel.PositionKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, cur.ToAssimpVec()));
 								}
 								else
 								{
-									channel.PositionKeys.Add(new VectorKey(time / AnimationFrameRate, new Vector3D(0, 0, 0)));
+									channel.PositionKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, new Vector3D(0, 0, 0)));
 								}
 							}
 
 							if (boneAnim.RotationFrames.TryGetValue(time, out var valueScale))
 							{
-								channel.RotationKeys.Add(new QuaternionKey(time / AnimationFrameRate, valueScale.Value.ToAssimpQuaternion()));
+								channel.RotationKeys.Add(new QuaternionKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, valueScale.Value.ToAssimpQuaternion()));
 							}
 							else
 							{
@@ -633,15 +643,15 @@ namespace TpacTool.IO.Assimp
 											(time - prev.Value.Time) / (next.Value.Time - prev.Value.Time));
 									}
 
-									channel.RotationKeys.Add(new QuaternionKey(time / AnimationFrameRate, cur.ToAssimpQuaternion()));
+									channel.RotationKeys.Add(new QuaternionKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, cur.ToAssimpQuaternion()));
 								}
 								else
 								{
-									channel.RotationKeys.Add(new QuaternionKey(time / AnimationFrameRate, new Quaternion(1, 0, 0, 0)));
+									channel.RotationKeys.Add(new QuaternionKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, new Quaternion(1, 0, 0, 0)));
 								}
 							}
 
-							channel.ScalingKeys.Add(new VectorKey(time / AnimationFrameRate, new Vector3D(1, 1, 1)));
+							channel.ScalingKeys.Add(new VectorKey((reversed ? rangeEnd - time + 1 : time) / AnimationFrameRate, new Vector3D(1, 1, 1)));
 						}
 					}
 
@@ -672,7 +682,10 @@ namespace TpacTool.IO.Assimp
 
 					// a sub-clip starts mid-animation; hold the bone at rest for one frame just
 					// before the clip so Blender's re-export keeps the true rest pose
-					if (startFrame > 0f)
+					if (reversed)
+						InsertRestHold(channel, restRot.ToAssimpQuaternion(),
+							new Vector3D(trans.X, trans.Y, trans.Z), 0f);
+					else if (startFrame > 0f)
 						InsertRestHold(channel, restRot.ToAssimpQuaternion(),
 							new Vector3D(trans.X, trans.Y, trans.Z), Math.Max(0f, startFrame - 1f));
 
