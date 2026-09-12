@@ -359,6 +359,15 @@ namespace TpacTool
 			return new OglMesh(indices.Select(i => (int)i).ToArray(), positions.ToArray());
 		}
 
+
+		public static OglMesh CreateSkeletonMesh(SkeletonDefinitionData skeletonDef, System.Numerics.Matrix4x4[] matrices)
+		{
+			if (skeletonDef == null || matrices == null || matrices.Length < skeletonDef.Bones.Count) return CreateSkeletonMesh(skeletonDef);
+			var positions = new List<float>(); var indices = new List<int>();
+			for (var i=0;i<skeletonDef.Bones.Count;i++) { var parent=skeletonDef.GetBoneId(skeletonDef.Bones[i].Parent); if(parent<0 || parent>=matrices.Length) continue; var a=System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, matrices[i]); var b=System.Numerics.Vector3.Transform(System.Numerics.Vector3.Zero, matrices[parent]); var n=positions.Count/3; positions.AddRange(new[]{a.X,a.Y,a.Z,b.X,b.Y,b.Z}); indices.Add(n); indices.Add(n+1); }
+			return indices.Count == 0 ? null : new OglMesh(indices.ToArray(), positions.ToArray());
+		}
+
 		public static OglMesh CreateCapsuleMesh(float radius, float height, int segments = 16)
 		{
 			var positions = new List<float>();

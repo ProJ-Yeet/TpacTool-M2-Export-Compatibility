@@ -30,6 +30,14 @@
             <ToggleButton Content="{x:Static loc:Resources.Preview_Scale_Inertia}" Height="21" Margin="5,0,0,0" Padding="3,1" Visibility="{Binding KeepScaleMode, Mode=OneWay, Converter={StaticResource BooleanVisibilityConverter}, ConverterParameter=1}" IsChecked="{Binding EnableScaleInertia, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="{x:Static loc:Resources.Preview_Scale_Inertia_Tooltip}"/>
             <ToggleButton Content="{x:Static loc:Resources.Preview_Showgrid}" Height="21" Margin="5,0,0,0" Padding="3,1" IsChecked="{Binding ShowGridLines, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="{x:Static loc:Resources.Preview_Showgrid_Tooltip}"/>
         </StackPanel>
+        <StackPanel Orientation="Horizontal" Visibility="{Binding IsAnimationMode, Mode=OneWay, Converter={StaticResource BooleanVisibilityConverter}}" VerticalAlignment="Bottom" Height="26" Background="{DynamicResource {x:Static SystemColors.MenuBarBrushKey}}">
+            <Button Content="播放" Width="45" Height="22" Margin="4,0,2,0" Click="AnimationPlay_Click"/>
+            <Button Content="暂停" Width="45" Height="22" Margin="2,0" Click="AnimationPause_Click"/>
+            <Button Content="重播" Width="45" Height="22" Margin="2,0,5,0" Click="AnimationStop_Click"/>
+            <Slider x:Name="AnimationTimeline" Width="170" Minimum="0" Maximum="1" ValueChanged="AnimationTimeline_ValueChanged" VerticalAlignment="Center"/>
+            <TextBlock x:Name="AnimationTimeText" Text="0.00 / 0.00" Width="100" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding AnimationError, Mode=OneWay}" Width="220" Foreground="DarkRed" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
         <StackPanel Orientation="Horizontal" Visibility="{Binding IsSkeletonMode, Mode=OneWay, Converter={StaticResource BooleanVisibilityConverter}}" VerticalAlignment="Bottom" Height="26" ScrollViewer.VerticalScrollBarVisibility="Disabled" Background="{DynamicResource {x:Static SystemColors.MenuBarBrushKey}}">
             <ToggleButton Content="{x:Static loc:Resources.Preview_Skeleton}" Height="21" Margin="5,0,0,0" Padding="3,1" IsChecked="{Binding ShowSkeleton, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="{x:Static loc:Resources.Preview_Skeleton_Tooltip}"/>
             <ToggleButton Content="{x:Static loc:Resources.Preview_Joint}" Height="21" Margin="5,0,0,0" Padding="3,1" IsChecked="{Binding ShowJoints, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="{x:Static loc:Resources.Preview_Joint_Tooltip}"/>

@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd TpacTool/ViewModel && python -c \\\"\\nsrc = open('AnimationViewModel.cs', encoding='utf-8').read()\\nprint('braces balance:', src.count('{') - src.count('}'))\\nfor m in ['ExportClipsFromLi...",
-  "error": "Exit code 128\nbraces balance: 0\r\nExportClipsFromList present: True\r\nParseClipNameList present: True\r\nIdentifierRegex present: True\r\nFormatAnimationNames present: True\r\nExportClipsFromListCommand present: True\r\n--- git diff stat ---\nfatal: ambiguous argument 'TpacTool/ViewModel/AnimationViewModel.cs': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'",
-  "timestamp": "2026-08-09T13:49:42.621Z",
-  "retry_count": 1
-}

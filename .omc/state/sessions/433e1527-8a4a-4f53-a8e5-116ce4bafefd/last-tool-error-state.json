@@ -1,7 +1,0 @@
-{
-  "tool_name": "mcp__funplay__execute_code",
-  "tool_input_preview": "{\"code\":\"using UnityEngine;\\nusing BannerRising;\\n\\npublic class TestAnimMapping : IFunplayCommand\\n{\\n    public void Execute(ExecutionContext ctx)\\n    {\\n        var player = GameObject.Find(\\\"Play...",
-  "error": "The operation timed out.",
-  "timestamp": "2026-08-08T06:25:13.443Z",
-  "retry_count": 1
-}

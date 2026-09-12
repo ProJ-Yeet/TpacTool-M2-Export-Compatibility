@@ -62,6 +62,7 @@ namespace TpacTool
 		private bool _firstTimeUpdateCamera = true;
 
 		private double _oldReferenceScale;
+		private bool _updatingAnimationTimeline;
 
 		public enum Mode
 		{
@@ -638,8 +639,17 @@ namespace TpacTool
 			}
 		}
 
-		private void OpenTkControl_Render(TimeSpan delta)
+		private static void ReleaseSkeletonMeshes(List<Renderer.RenderSkeleton> meshes) { foreach (var item in meshes) item.Mesh?.Release(); }
+
+private void AnimationPlay_Click(object sender, RoutedEventArgs e) { (DataContext as OglPreviewViewModel)?.PlayAnimation(); }
+		private void AnimationPause_Click(object sender, RoutedEventArgs e) { (DataContext as OglPreviewViewModel)?.PauseAnimation(); }
+		private void AnimationStop_Click(object sender, RoutedEventArgs e) { (DataContext as OglPreviewViewModel)?.StopAnimation(); }
+		private void AnimationTimeline_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (!_updatingAnimationTimeline && DataContext is OglPreviewViewModel vm) vm.AnimationTime = (float)e.NewValue; }
+
+private void OpenTkControl_Render(TimeSpan delta)
 		{
+			if (DataContext is OglPreviewViewModel vm) vm.AdvanceAnimation((float)delta.TotalSeconds);
+			if (DataContext is OglPreviewViewModel timelineVm && PreviewTarget == Mode.Animation) { _updatingAnimationTimeline = true; AnimationTimeline.Maximum = Math.Max(0.001, timelineVm.AnimationDuration); AnimationTimeline.Value = timelineVm.AnimationTime; AnimationTimeText.Text = timelineVm.AnimationTime.ToString("F2") + " / " + timelineVm.AnimationDuration.ToString("F2"); _updatingAnimationTimeline = false; }
 			if (ClearOnNextTick)
 			{
 				ClearOnNextTick = false;
@@ -730,7 +740,7 @@ namespace TpacTool
 				_renderer.Render(delta);
 			}
 
-			if (PreviewTarget == Mode.Skeleton)
+			if (PreviewTarget == Mode.Skeleton || PreviewTarget == Mode.Animation)
 			{
 				if (_renderer.Meshes.Count > 0)
 					_renderer.Meshes.Clear();
@@ -739,6 +749,9 @@ namespace TpacTool
 				_renderer.ShowJoints = ShowJoints;
 				_renderer.ShowColliders = ShowColliders;
 
+				ReleaseSkeletonMeshes(_renderer.Skeletons);
+				ReleaseSkeletonMeshes(_renderer.JointMeshes);
+				ReleaseSkeletonMeshes(_renderer.ColliderMeshes);
 				_renderer.Skeletons.Clear();
 				_renderer.JointMeshes.Clear();
 				_renderer.ColliderMeshes.Clear();
@@ -749,7 +762,8 @@ namespace TpacTool
 					// 骨骼实体（线段）
 					if (ShowSkeleton)
 					{
-						var skeletonMesh = MeshManager.CreateSkeletonMesh(skeleton.Definition.Data);
+						var matrices = PreviewTarget == Mode.Animation && DataContext is OglPreviewViewModel animationVm ? animationVm.AnimationMatrices : null;
+						var skeletonMesh = matrices != null && matrices.Length > 0 ? MeshManager.CreateSkeletonMesh(skeleton.Definition.Data, matrices) : MeshManager.CreateSkeletonMesh(skeleton.Definition.Data);
 						if (skeletonMesh != null)
 						{
 							var rs = new Renderer.RenderSkeleton();
@@ -760,7 +774,7 @@ namespace TpacTool
 					}
 
 					// 关节（轴指示器：位置+旋转）
-					if (ShowJoints && skeleton.UserData?.Data != null)
+					if (PreviewTarget != Mode.Animation && ShowJoints && skeleton.UserData?.Data != null)
 					{
 						var matrices = skeleton.Definition.Data.CreateBoneMatrices();
 						foreach (var constraint in skeleton.UserData.Data.Constraints)
@@ -788,7 +802,7 @@ namespace TpacTool
 					}
 
 					// 碰撞体（线框胶囊）
-					if (ShowColliders && skeleton.UserData?.Data != null)
+					if (PreviewTarget != Mode.Animation && ShowColliders && skeleton.UserData?.Data != null)
 					{
 						var matrices = skeleton.Definition.Data.CreateBoneMatrices();
 						foreach (var body in skeleton.UserData.Data.Bodies)

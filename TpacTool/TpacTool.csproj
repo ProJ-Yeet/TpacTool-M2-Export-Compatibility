@@ -160,6 +160,7 @@
     <Compile Include="UserControl\Vec4Box.xaml.cs">
       <DependentUpon>Vec4Box.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Util\AnimationClipPreview.cs" />
     <Compile Include="Util\ArrayGetterConverter.cs" />
     <Compile Include="Util\BooleanFlipConverter.cs" />
     <Compile Include="Util\BooleanVisibilityConverter.cs" />

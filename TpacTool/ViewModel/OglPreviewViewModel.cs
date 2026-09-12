@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using OpenTK;
 using TpacTool.Lib;
 using TpacTool.Properties;
 using GalaSoft.MvvmLight;
+using CommonServiceLocator;
 
 namespace TpacTool
 {
@@ -16,6 +18,16 @@ namespace TpacTool
 		public static readonly Guid PreviewSkeletonEvent = Guid.NewGuid();
 
 		public static readonly Guid PreviewAnimationEvent = Guid.NewGuid();
+		public static readonly Guid PreviewAnimationClipEvent = Guid.NewGuid();
+		private AnimationClipPreview _clipPreview;
+		private float _animationTime;
+		private bool _isPlaying;
+		public bool IsAnimationMode => PreviewTarget == OglPreviewPage.Mode.Animation;
+		public float AnimationDuration => _clipPreview?.Duration ?? 0;
+		public float AnimationTime { get => _animationTime; set { _animationTime = Math.Max(0, Math.Min(AnimationDuration, value)); RaisePropertyChanged(nameof(AnimationTime)); } }
+		public bool IsPlaying => _isPlaying;
+		public string AnimationError => _clipPreview?.Error ?? string.Empty;
+		public System.Numerics.Matrix4x4[] AnimationMatrices => _clipPreview?.Sample(_animationTime) ?? new System.Numerics.Matrix4x4[0];
 
 		public const float MAX_GRID_LENGTH = 256;
 
@@ -234,6 +246,7 @@ namespace TpacTool
 				MessengerInstance.Register<Texture>(this, PreviewTextureEvent, SetRenderTexture);
 				MessengerInstance.Register<Skeleton>(this, PreviewSkeletonEvent, SetRenderSkeleton);
 				MessengerInstance.Register<(SkeletalAnimation, Skeleton)>(this, PreviewAnimationEvent, OnPreviewAnimation);
+				MessengerInstance.Register<AnimationClip>(this, PreviewAnimationClipEvent, clip => SetRenderAnimationClip(clip, ServiceLocator.Current.GetInstance<MainViewModel>().AssetManager.LoadedAssets));
 				MessengerInstance.Register<object>(this, MainViewModel.CleanupEvent, OnCleanup);
 			}
 		}
@@ -478,8 +491,25 @@ namespace TpacTool
 				RaisePropertyChanged(nameof(IsModelMode));
 				RaisePropertyChanged(nameof(IsImageMode));
 				RaisePropertyChanged(nameof(IsSkeletonMode));
+				RaisePropertyChanged(nameof(IsAnimationMode));
 			}
 		}
+
+
+		public void SetRenderAnimationClip(AnimationClip clip, IEnumerable<AssetItem> assets)
+		{
+			_clipPreview = AnimationClipPreview.Create(clip, assets);
+			_animationTime = 0; _isPlaying = _clipPreview.Error == null;
+			var source = assets == null ? null : System.Linq.Enumerable.OfType<SkeletalAnimation>(assets).FirstOrDefault(a => a.Guid == clip.Animation);
+			var skeleton = source == null ? null : System.Linq.Enumerable.OfType<Skeleton>(assets).FirstOrDefault(x => x.Guid == source.Skeleton);
+			Skeleton = skeleton;
+			SetPreviewTarget(OglPreviewPage.Mode.Animation);
+			RaisePropertyChanged(nameof(AnimationDuration)); RaisePropertyChanged(nameof(AnimationTime)); RaisePropertyChanged(nameof(IsPlaying)); RaisePropertyChanged(nameof(AnimationError));
+		}
+		public void AdvanceAnimation(float seconds) { if (_isPlaying && AnimationDuration > 0) AnimationTime = (_animationTime + seconds) % AnimationDuration; }
+        public void PlayAnimation() { if (_clipPreview != null && _clipPreview.Error == null) { _isPlaying = true; RaisePropertyChanged(nameof(IsPlaying)); } }
+        public void PauseAnimation() { _isPlaying = false; RaisePropertyChanged(nameof(IsPlaying)); }
+        public void StopAnimation() { _isPlaying = false; AnimationTime = 0; RaisePropertyChanged(nameof(IsPlaying)); }
 
 		public void SetRenderSkeleton(Skeleton skeleton)
 		{

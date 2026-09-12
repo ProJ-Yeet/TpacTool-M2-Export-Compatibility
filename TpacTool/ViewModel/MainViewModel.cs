@@ -481,8 +481,9 @@ namespace TpacTool
 				if (AssetPanelUri != Uri_Page_AnimationClip)
 				{
 					AssetPanelUri = Uri_Page_AnimationClip;
-					AssetPreviewUri = Uri_Page_BlankPreview;
+					AssetPreviewUri = Uri_Page_OglPreview;
 				}
+				MessengerInstance.Send(animationClip, OglPreviewViewModel.PreviewAnimationClipEvent);
 				hasContent = true;
 			}
 
