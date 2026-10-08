@@ -76,6 +76,10 @@ namespace TpacTool
 
 		public ICommand ShowAboutCommand { set; get; }
 
+		public ICommand ShowGalleryCommand { set; get; }
+
+		private GalleryWindow _galleryWindow;
+
 		public int RecentDirCount { private set; get; }
 
 		public string[] RecentDirStrings { private set; get; }
@@ -154,6 +158,7 @@ namespace TpacTool
 				OpenRecentFolderCommand = new RelayCommand<string>(OpenRecentFolder);
 				ChangeLanguageCommand = new RelayCommand<string>(ChangeLanguage);
 				ShowAboutCommand = new RelayCommand(ShowAbout);
+				ShowGalleryCommand = new RelayCommand(ShowGallery);
 
 				MessengerInstance.Register<AssetItem>(this, AssetTreeViewModel.AssetSelectedEvent, OnSelectAsset);
 
@@ -255,6 +260,7 @@ namespace TpacTool
 
 		private void BeforeLoad()
 		{
+			_galleryWindow?.Close();
 			MessengerInstance.Send<object>(null, CleanupEvent);
 			foreach (var tabItem in TabPages)
 			{
@@ -324,7 +330,7 @@ namespace TpacTool
 			}
 
 			MessengerInstance.Send(AssetManager.LoadedAssets
-				.Where(asset => asset.Type == Skeleton.TYPE_GUID && !asset.Name.Contains("notused"))
+				.Where(asset => asset.Type == Skeleton.TYPE_GUID)
 				.Cast<Skeleton>().OrderBy(skeleton => skeleton.Name) as IEnumerable<Skeleton>, ModelViewModel.UpdateSkeletonListEvent);
 
 			MessengerInstance.Send(AssetManager.LoadedAssets
@@ -503,6 +509,28 @@ namespace TpacTool
 		{
 			App.SetLanguage(obj);
 			RaisePropertyChanged("Settings.Language");
+		}
+
+		private void ShowGallery()
+		{
+			if (AssetManager == null || TabPages.Count == 0)
+			{
+				MessageBox.Show("Open an asset folder first (File > Open asset folder).", Resources.Msgbox_Info,
+					MessageBoxButton.OK, MessageBoxImage.Information);
+				return;
+			}
+
+			if (_galleryWindow != null)
+			{
+				if (_galleryWindow.WindowState == WindowState.Minimized)
+					_galleryWindow.WindowState = WindowState.Normal;
+				_galleryWindow.Activate();
+				return;
+			}
+
+			_galleryWindow = new GalleryWindow(new GalleryViewModel(AssetManager));
+			_galleryWindow.Closed += (sender, args) => _galleryWindow = null;
+			_galleryWindow.Show();
 		}
 
 		private void ShowAbout()

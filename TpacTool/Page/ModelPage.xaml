@@ -160,6 +160,8 @@
                             <StackPanel>
                                 <RadioButton Content="{x:Static loc:Resources.Model_Export_Type_Static}" Margin="5,10,5,5" Command="{Binding ChangeRiggedCommand, Mode=OneWay}" CommandParameter="false" IsChecked="{Binding ExportAsRigged, Converter={StaticResource BooleanFlipConverter}, Mode=OneWay}" IsEnabled="{Binding IsRigged, Mode=OneWay}"/>
                                 <RadioButton Content="{x:Static loc:Resources.Model_Export_Type_Rigged}" Margin="5" Command="{Binding ChangeRiggedCommand, Mode=OneWay}" CommandParameter="true" IsChecked="{Binding ExportAsRigged, Mode=OneWay}" IsEnabled="{Binding IsRigged, Mode=OneWay}"/>
+                                <CheckBox Content="Convert A-pose to T-pose" ToolTip="Rotates the arms of the skeleton to a T-pose and deforms the skinned mesh to match. Only applies to rigged exports." Margin="5" IsChecked="{Binding ConvertToTPose, Mode=TwoWay}" IsEnabled="{Binding ExportAsRigged, Mode=OneWay}"/>
+                                <CheckBox Content="Straighten elbows" ToolTip="When converting to T-pose, also straighten the forearms so the whole arm is level." Margin="25,0,5,5" IsChecked="{Binding TPoseStraightenElbows, Mode=TwoWay}" IsEnabled="{Binding ExportAsRigged, Mode=OneWay}"/>
                             </StackPanel>
                         </GroupBox>
                         <GroupBox Header="{x:Static loc:Resources.Model_Export_Skeleton}">

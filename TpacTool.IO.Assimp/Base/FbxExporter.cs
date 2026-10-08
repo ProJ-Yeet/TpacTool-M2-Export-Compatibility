@@ -719,6 +719,10 @@ namespace TpacTool.IO.Assimp
 				}
 			}
 
+			if (ExtraAnimations != null && ExtraAnimations.Count > 0 && Animation == null &&
+			    (Animations == null || Animations.Count == 0))
+				FixExtraAnimationTimes(doc);
+
 			var memoryStream = new MemoryStream(data.Length);
 			if (UseAsciiFormat)
 			{
@@ -729,6 +733,79 @@ namespace TpacTool.IO.Assimp
 				new FbxBinaryWriter(memoryStream).Write(doc);
 			}
 			return memoryStream.ToArray();
+		}
+
+		/// <summary>
+		/// Assimp's fbx writer stretches the key times of ready-made animations by a constant factor
+		/// (~41.46x measured for clips from a glTF, whatever the ticks per second) and leaves every stack's
+		/// LocalStop at 0. The stretch is uniform, so the key times are scaled back so the latest key lands
+		/// at the latest key time of <see cref="AbstractAssimpExporter.ExtraAnimations"/> (in seconds), and
+		/// each stack gets its clip's length.
+		/// </summary>
+		private void FixExtraAnimationTimes(FbxDocument doc)
+		{
+			double LastKey(Animation animation) => animation.NodeAnimationChannels
+				.SelectMany(c => c.PositionKeys.Select(k => k.Time)
+					.Concat(c.RotationKeys.Select(k => k.Time))
+					.Concat(c.ScalingKeys.Select(k => k.Time)))
+				.DefaultIfEmpty(0).Max();
+
+			var expected = ExtraAnimations.Select(LastKey).DefaultIfEmpty(0).Max();
+			if (expected <= 0)
+				return;
+
+			var objects = doc["Objects"][0];
+			var keyTimes = new List<LongArrayToken>();
+			long actualMax = 0;
+			foreach (var node in objects.Nodes)
+			{
+				if (node?.Identifier == null || node.Identifier.Value != "AnimationCurve")
+					continue;
+				foreach (var child in node.Nodes)
+				{
+					if (child?.Identifier != null && child.Identifier.Value == "KeyTime" &&
+					    child.Value is LongArrayToken times && times.Values.Length > 0)
+					{
+						keyTimes.Add(times);
+						actualMax = Math.Max(actualMax, times.Values.Max());
+					}
+				}
+			}
+			if (actualMax <= 0)
+				return;
+
+			var factor = expected * FBX_SECOND / actualMax;
+			if (Math.Abs(factor - 1) > 1e-6)
+			{
+				foreach (var times in keyTimes)
+					times.Values = times.Values.Select(v => (long) Math.Round(v * factor)).ToArray();
+			}
+
+			var lengths = new Dictionary<string, double>();
+			foreach (var animation in ExtraAnimations)
+				lengths[animation.Name ?? string.Empty] = LastKey(animation);
+			foreach (var node in objects.Nodes)
+			{
+				if (node?.Identifier == null || node.Identifier.Value != "AnimationStack" || node.Properties.Length < 2 ||
+				    !(node.Properties[1] is StringToken nameToken))
+					continue;
+				var name = nameToken.Value;
+				var separator = name.IndexOf("::", StringComparison.Ordinal);
+				if (separator >= 0)
+					name = name.Substring(separator + 2);
+				if (!lengths.TryGetValue(name, out var length))
+					continue;
+				foreach (var child in node.Nodes)
+				{
+					if (child?.Identifier == null || child.Identifier.Value != "Properties70")
+						continue;
+					foreach (var prop in child.Nodes)
+					{
+						if (prop?.Value is StringToken st && (st.Value == "LocalStop" || st.Value == "ReferenceStop"))
+							SetPropertyValue(prop, ToFbxTime((float) length));
+					}
+				}
+			}
 		}
 
 		private static FbxNode CreatePNode(params object[] args)

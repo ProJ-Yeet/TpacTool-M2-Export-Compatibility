@@ -66,6 +66,21 @@ namespace TpacTool.IO.Assimp
 				ModelExporter.ExportToFile(path, model, skeleton, animation, morph, option);
 		}
 
+		// Fbx export that also writes ready-made assimp animations (e.g. a Medieval 2 skeleton's clips).
+		public static void ExportToFile([NotNull] string path, [CanBeNull] Metamesh model,
+			[CanBeNull] Skeleton skeleton, [CanBeNull] List<Animation> extraAnimations,
+			ModelExporter.ModelExportOption option = 0, AssimpModelExportOption assimpOption = 0)
+		{
+			if (!path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+				throw new FormatException("Animations can only be exported to fbx");
+			var exporter = new FbxExporter
+			{
+				UseAsciiFormat = (assimpOption & AssimpModelExportOption.UseAscii) != 0,
+				ExtraAnimations = extraAnimations
+			};
+			ModelExporter.ExportToFile(exporter, path, model, skeleton, null, null, option);
+		}
+
 		// Batch export: multiple animation clips for one skeleton in a single fbx file.
 		public static void ExportToFile([NotNull] string path, [CanBeNull] Metamesh model,
 			[CanBeNull] Skeleton skeleton, [CanBeNull] IReadOnlyList<SkeletalAnimation> animations,

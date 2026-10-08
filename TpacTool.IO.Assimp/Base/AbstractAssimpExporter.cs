@@ -25,6 +25,12 @@ namespace TpacTool.IO.Assimp
 
 		public abstract bool SupportTRSInAnimation { get; }
 
+		/// <summary>
+		/// Ready-made animations (e.g. the clips of a Medieval 2 skeleton) written as they are, next to any
+		/// TpacTool animation. Channels must target bone names of <see cref="AbstractModelExporter.Skeleton"/>.
+		/// </summary>
+		public List<Animation> ExtraAnimations { set; get; }
+
 		public override void Export(string path)
 		{
 			var parentPath = Directory.GetParent(path);
@@ -95,6 +101,9 @@ namespace TpacTool.IO.Assimp
 				{
 					scene.Animations.Add(ExportAnimation(Skeleton != null ? skeletonNode.Name : modelNode.Name));
 				}
+
+				if (ExtraAnimations != null)
+					scene.Animations.AddRange(ExtraAnimations);
 
 				SetupScene(scene);
 

@@ -15,6 +15,9 @@
         <local:IntThresholdConverter x:Key="IntThresholdConverter"/>
         <Image x:Key="Icon_Language" Source="../Properties/Icon_Language.png"/>
     </Window.Resources>
+    <Window.InputBindings>
+        <KeyBinding Key="G" Modifiers="Control" Command="{Binding ShowGalleryCommand}"/>
+    </Window.InputBindings>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="5*"/>
@@ -39,6 +42,9 @@
                 <MenuItem Header="{Binding RecentDirStrings, ConverterParameter=8, Converter={StaticResource ArrayGetterConverter}}" Command="{Binding OpenRecentFolderCommand}" CommandParameter="8" Visibility="{Binding RecentDirCount, ConverterParameter=9, Converter={StaticResource IntThresholdConverter}, Mode=OneWay}"/>
                 <Separator Visibility="{Binding RecentDirCount, ConverterParameter=1, Converter={StaticResource IntThresholdConverter}, Mode=OneWay}"/>
                 <MenuItem Header="{x:Static loc:Resources.Main_Menu_File_Exit}" InputGestureText="Alt+F4"/>
+            </MenuItem>
+            <MenuItem Header="_View" Height="24" Margin="0,1,0,0">
+                <MenuItem Header="Asset _Gallery…" InputGestureText="Ctrl+G" Command="{Binding ShowGalleryCommand}"/>
             </MenuItem>
             <MenuItem Header="{x:Static loc:Resources.Main_Menu_Settings}" Height="24" Margin="0,1,0,0">
                 <MenuItem Icon="{StaticResource Icon_Language}" Header="{x:Static loc:Resources.Main_Menu_Settings_Languages}">

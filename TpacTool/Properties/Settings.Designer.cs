@@ -225,5 +225,113 @@ namespace TpacTool.Properties {
                 this["PreviewScaleInertia"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool ExportModelTPose {
+            get {
+                return ((bool)(this["ExportModelTPose"]));
+            }
+            set {
+                this["ExportModelTPose"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool ExportModelTPoseStraightenElbows {
+            get {
+                return ((bool)(this["ExportModelTPoseStraightenElbows"]));
+            }
+            set {
+                this["ExportModelTPoseStraightenElbows"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string GalleryExportDir {
+            get {
+                return ((string)(this["GalleryExportDir"]));
+            }
+            set {
+                this["GalleryExportDir"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("160")]
+        public int GalleryThumbnailSize {
+            get {
+                return ((int)(this["GalleryThumbnailSize"]));
+            }
+            set {
+                this["GalleryThumbnailSize"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0")]
+        public int GalleryRigTarget {
+            get {
+                return ((int)(this["GalleryRigTarget"]));
+            }
+            set {
+                this["GalleryRigTarget"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string M2CustomArmaturesDir {
+            get {
+                return ((string)(this["M2CustomArmaturesDir"]));
+            }
+            set {
+                this["M2CustomArmaturesDir"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("Sword")]
+        public string M2Skeleton {
+            get {
+                return ((string)(this["M2Skeleton"]));
+            }
+            set {
+                this["M2Skeleton"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string GalleryWindowBounds {
+            get {
+                return ((string)(this["GalleryWindowBounds"]));
+            }
+            set {
+                this["GalleryWindowBounds"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool M2IncludeAnimations {
+            get {
+                return ((bool)(this["M2IncludeAnimations"]));
+            }
+            set {
+                this["M2IncludeAnimations"] = value;
+            }
+        }
     }
 }

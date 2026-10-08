@@ -184,6 +184,18 @@ namespace TpacTool
 			get => Settings.Default.ExportModelDiffuseOnly;
 		}
 
+		public bool ConvertToTPose
+		{
+			set => Settings.Default.ExportModelTPose = value;
+			get => Settings.Default.ExportModelTPose;
+		}
+
+		public bool TPoseStraightenElbows
+		{
+			set => Settings.Default.ExportModelTPoseStraightenElbows = value;
+			get => Settings.Default.ExportModelTPoseStraightenElbows;
+		}
+
 		public bool UseLargerScale
 		{
 			set => Settings.Default.ExportModelLargerScale = value;
@@ -290,13 +302,10 @@ namespace TpacTool
 				{
 					_skeletons.Clear();
 					_skeletons.AddRange(skeletons);
-					foreach (var skeleton in _skeletons)
-					{
-						if (skeleton.Name == "human_skeleton")
-							_human_skeleton = skeleton;
-						else if (skeleton.Name == "horse_skeleton")
-							_horse_skeleton = skeleton;
-					}
+					// mods ship the human skeleton under other names (e.g. human_skeleton_notused.004);
+					// without any, fall back to the built-in copy of bannerlord's human skeleton
+					_human_skeleton = BuiltInSkeleton.FindLoadedHuman(_skeletons) ?? BuiltInSkeleton.Human;
+					_horse_skeleton = BuiltInSkeleton.FindLoadedHorse(_skeletons);
 					RaisePropertyChanged("Skeletons");
 					//SelectedSkeletonIndex = 0;
 					//RaisePropertyChanged("SelectedSkeletonIndex");
@@ -400,6 +409,12 @@ namespace TpacTool
 				option |= ModelExporter.ModelExportOption.ExportDiffuseOnly;
 			if (IsExportAllLods)
 				option |= ModelExporter.ModelExportOption.ExportAllLod;
+			if (ConvertToTPose && skeleton != null)
+			{
+				option |= ModelExporter.ModelExportOption.ConvertToTPose;
+				if (!TPoseStraightenElbows)
+					option |= ModelExporter.ModelExportOption.KeepElbowBend;
+			}
 
 			_saveFileDialog.FileName = Asset.Name;
 			if (_saveFileDialog.ShowDialog().GetValueOrDefault(false))
@@ -411,7 +426,14 @@ namespace TpacTool
 					AssimpModelExporter.ExportToFile(path, Asset, skeleton, option);
 				else
 					ModelExporter.ExportToFile(path, Asset, skeleton, option);
-				MessengerInstance.Send(string.Format("{0} exported", Asset.Name), MainViewModel.StatusEvent);
+				var tPose = ModelExporter.LastTPoseResult;
+				if (tPose != null)
+					MessengerInstance.Send(tPose.HasChanges
+						? string.Format("{0} exported in T-pose ({1})", Asset.Name, string.Join("; ", tPose.Log))
+						: string.Format("{0} exported, T-pose skipped: {1}", Asset.Name, string.Join("; ", tPose.Log)),
+						MainViewModel.StatusEvent);
+				else
+					MessengerInstance.Send(string.Format("{0} exported", Asset.Name), MainViewModel.StatusEvent);
 			}
 		}
 
