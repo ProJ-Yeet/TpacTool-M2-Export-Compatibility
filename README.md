@@ -9,7 +9,7 @@ This fork of [Wuan23/TpacTool](https://github.com/Wuan23/TpacTool) adds:
 - a **Bannerlord to Medieval 2 rig transfer**: rigged human models are T-posed, fitted onto a Medieval 2 skeleton and re-weighted to its bones, with the skeleton's animations included in the FBX.
 
 The Medieval 2 skeletons and animations bundled in `TpacTool/M2Skeletons` come from the
-[Medieval 2 Blender Toolkit](https://github.com/WK-313/Medieval-2-Blender-Toolkit) (WK-313).
+[Medieval 2 Blender Toolkit](https://github.com/WK-313/Medieval-2-Blender-Toolkit) by WK and ProJYeet.
 See the sections below for details.
 
 [中文](README.zh-CN.md)
