@@ -172,6 +172,20 @@
                         <CheckBox Content="One folder per asset" Margin="0,2,0,8" IsChecked="{Binding OneFolderPerAsset, Mode=TwoWay}"
                                   ToolTip="On: output/&lt;asset&gt;/&lt;asset&gt;.fbx with its textures next to it.&#x0a;Off: models in the output folder, textures in a sub folder named after each model."/>
 
+                        <GroupBox Header="Models" Padding="4" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="LOD" Foreground="#FF555555"/>
+                                <ComboBox Margin="0,2,0,6" ItemsSource="{Binding LodItems}" SelectedIndex="{Binding LodIndex, Mode=TwoWay}"
+                                          ToolTip="Which level of detail to export. A model without the chosen LOD uses its nearest lower one (the export log lists them)."/>
+                                <CheckBox x:Name="CombineBox" Content="Combine selected models into one file" Margin="0,2" IsChecked="{Binding CombineModels, Mode=TwoWay}"
+                                          ToolTip="Writes every selected model into a single file. Each mesh is named after its model.&#x0a;The file is rigged only when all models use the same skeleton; otherwise it is exported static."/>
+                                <StackPanel Margin="18,2,0,2" Visibility="{Binding IsChecked, ElementName=CombineBox, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="File name" Foreground="#FF555555"/>
+                                    <TextBox Height="24" Margin="0,2,0,0" VerticalContentAlignment="Center" Text="{Binding CombinedName, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
                         <GroupBox Header="Rigged models" Padding="4" Margin="0,0,0,8">
                             <StackPanel>
                                 <TextBlock Text="Skeleton" Foreground="#FF555555"/>
@@ -201,7 +215,6 @@
 
                         <GroupBox Header="Options" Padding="4">
                             <StackPanel>
-                                <CheckBox Content="Export all LODs" Margin="0,2" IsChecked="{Binding AllLods, Mode=TwoWay}"/>
                                 <CheckBox Content="Only link diffuse textures in the model" Margin="0,2" IsChecked="{Binding DiffuseOnly, Mode=TwoWay}"
                                           ToolTip="All textures are still written to disk; only the diffuse map is assigned in the model's materials."/>
                                 <CheckBox Content="Larger scale (x10)" Margin="0,2" IsChecked="{Binding LargerScale, Mode=TwoWay}"/>

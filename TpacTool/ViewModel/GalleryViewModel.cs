@@ -193,11 +193,28 @@ namespace TpacTool
 			set => Settings.Default.ExportModelTPoseStraightenElbows = value;
 		}
 
-		public bool AllLods
+		/// <summary>"LOD n" for every LOD the loaded models have, then "All LODs".</summary>
+		public string[] LodItems { get; }
+
+		// the LOD of each LodItems entry, -1 for all
+		private readonly int[] _lodValues;
+		private int _lodIndex;
+
+		public int LodIndex
 		{
-			get => Settings.Default.ExportModelAllLods;
-			set => Settings.Default.ExportModelAllLods = value;
+			get => _lodIndex;
+			set
+			{
+				if (Set(ref _lodIndex, value))
+					Settings.Default.ExportModelAllLods = SelectedLod < 0;
+			}
 		}
+
+		private int SelectedLod => _lodValues[Math.Max(0, Math.Min(_lodIndex, _lodValues.Length - 1))];
+
+		public bool CombineModels { get; set; }
+
+		public string CombinedName { get; set; } = "combined";
 
 		public bool DiffuseOnly
 		{
@@ -368,6 +385,15 @@ namespace TpacTool
 					_allItems.Add(new GalleryItem(asset, OnItemSelectionChanged));
 			}
 
+			var lods = assetManager.LoadedAssets.OfType<Metamesh>().SelectMany(m => m.Meshes)
+				.Select(m => m.Lod).Where(l => l >= 0).Distinct().OrderBy(l => l).ToList();
+			if (lods.Count == 0)
+				lods.Add(0);
+			_lodValues = lods.Concat(new[] { -1 }).ToArray();
+			LodItems = lods.Select(l => l == 0 ? "LOD 0 (most detailed)" : "LOD " + l)
+				.Concat(new[] { "All LODs" }).ToArray();
+			_lodIndex = Settings.Default.ExportModelAllLods ? _lodValues.Length - 1 : 0;
+
 			SelectAllCommand = new RelayCommand(() => SetSelection(_visibleItems, true));
 			SelectNoneCommand = new RelayCommand(() => SetSelection(_allItems, false));
 			InvertSelectionCommand = new RelayCommand(() =>
@@ -515,7 +541,9 @@ namespace TpacTool
 				HorseSkeleton = _horseSkeleton,
 				ConvertToTPose = ConvertToTPose,
 				StraightenElbows = StraightenElbows,
-				AllLods = AllLods,
+				Lod = SelectedLod,
+				CombineModels = CombineModels,
+				CombinedName = CombinedName,
 				DiffuseOnly = DiffuseOnly,
 				LargerScale = LargerScale,
 				NegYForward = NegYForward,
@@ -579,6 +607,21 @@ namespace TpacTool
 				return;
 			}
 			var exporter = new GalleryExporter(settings);
+			// one job per asset; with "combine" all selected models are a single job
+			var jobs = new List<KeyValuePair<string, Func<string>>>();
+			var models = settings.CombineModels
+				? selected.Select(i => i.Asset).OfType<Metamesh>().ToList()
+				: new List<Metamesh>();
+			if (models.Count > 0)
+				jobs.Add(new KeyValuePair<string, Func<string>>(
+					$"{settings.CombinedName} ({models.Count} models combined)", () => exporter.ExportCombined(models)));
+			foreach (var item in selected)
+			{
+				if (models.Count > 0 && item.Asset is Metamesh)
+					continue;
+				var asset = item.Asset;
+				jobs.Add(new KeyValuePair<string, Func<string>>(item.Name, () => exporter.Export(asset)));
+			}
 			var cancel = new CancellationTokenSource();
 			_exportCancel = cancel;
 			IsExporting = true;
@@ -593,31 +636,32 @@ namespace TpacTool
 				var warnings = new List<string>();
 				var log = new List<string>();
 				int done = 0;
-				foreach (var item in selected)
+				foreach (var job in jobs)
 				{
 					if (cancel.IsCancellationRequested)
 						break;
 					var index = done;
+					var name = job.Key;
 					dispatcher.BeginInvoke(new Action(() =>
 					{
 						// same priority as the completion message below, so a late progress update
 						// can never overwrite it
 						if (!IsExporting)
 							return;
-						ExportStatus = $"Exporting {index + 1}/{selected.Count}: {item.Name}";
-						ExportProgress = 100.0 * index / selected.Count;
+						ExportStatus = $"Exporting {index + 1}/{jobs.Count}: {name}";
+						ExportProgress = 100.0 * index / jobs.Count;
 					}));
 					try
 					{
-						var note = exporter.Export(item.Asset);
-						log.Add(item.Name + (note != null ? " - " + note : ""));
+						var note = job.Value();
+						log.Add(name + (note != null ? " - " + note : ""));
 						if (note != null && (note.Contains("exported static") || note.Contains("skipped")))
-							warnings.Add($"{item.Name}: {note}");
+							warnings.Add($"{name}: {note}");
 					}
 					catch (Exception e)
 					{
-						failures.Add($"{item.Name}: {e.Message}");
-						log.Add($"{item.Name} - FAILED: {e}");
+						failures.Add($"{name}: {e.Message}");
+						log.Add($"{name} - FAILED: {e}");
 					}
 					done++;
 				}
@@ -635,9 +679,9 @@ namespace TpacTool
 				dispatcher.BeginInvoke(new Action(() =>
 				{
 					IsExporting = false;
-					ExportProgress = 100.0 * done / selected.Count;
+					ExportProgress = 100.0 * done / jobs.Count;
 					var ok = done - failures.Count;
-					var cancelled = cancel.IsCancellationRequested && done < selected.Count;
+					var cancelled = cancel.IsCancellationRequested && done < jobs.Count;
 					ExportStatus = $"{(cancelled ? "Cancelled: " : "Done: ")}{ok} exported" +
 					               (failures.Count > 0 ? $", {failures.Count} failed" : "") +
 					               (warnings.Count > 0 ? $", {warnings.Count} with warnings" : "") +

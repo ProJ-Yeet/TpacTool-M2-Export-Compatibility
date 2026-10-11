@@ -57,6 +57,8 @@ Open **View > Asset Gallery…** (Ctrl+G) after loading an asset folder to brows
   - models: `<output>/<model>/<model>.fbx` plus every texture of the model's materials (primary and secondary)
   - materials: `<output>/<material>/` with all of the material's textures
   - textures: `<output>/textures/`
+- **LOD** picks the level of detail to export (LOD 0, 1, 2, … or all LODs). A model that doesn't have the chosen LOD uses its nearest lower one, which the export log notes.
+- **Combine selected models into one file** writes all selected models into a single `<output>/<name>/<name>.fbx`, with each mesh named after its model. The file is rigged when every model uses the same skeleton (including the Medieval 2 transfer). Otherwise it is exported static.
 - Rigged models are bound to the human skeleton automatically (horse skeleton for horse / camel gear), or to the skeleton you pick. Mods that ship the human skeleton under another name (e.g. `human_skeleton_notused.004`) are recognised, and when the loaded folder has no human skeleton at all a built-in copy of Bannerlord's 28-bone human skeleton is used. An `export_log.txt` lists what was exported and any failures.
 
 ##### A-pose to T-pose

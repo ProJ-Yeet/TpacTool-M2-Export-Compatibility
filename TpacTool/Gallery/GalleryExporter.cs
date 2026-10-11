@@ -31,7 +31,11 @@ namespace TpacTool
 		public Skeleton HorseSkeleton;
 		public bool ConvertToTPose;
 		public bool StraightenElbows = true;
-		public bool AllLods;
+		/// <summary>-1: all LODs. Otherwise this LOD; a model without it uses its nearest lower LOD.</summary>
+		public int Lod;
+		/// <summary>Write all selected models into one file named <see cref="CombinedName"/>.</summary>
+		public bool CombineModels;
+		public string CombinedName = "combined";
 		public bool DiffuseOnly;
 		public bool LargerScale;
 		public bool NegYForward;
@@ -77,15 +81,126 @@ namespace TpacTool
 
 		private string ExportModel(Metamesh model)
 		{
-			var name = UniqueName(model.Name);
-			var dir = _settings.OneFolderPerAsset ? Path.Combine(_settings.OutputDir, name) : _settings.OutputDir;
-			Directory.CreateDirectory(dir);
-			var path = Path.Combine(dir, name + "." + _settings.ModelExtension);
-
 			var note = new List<string>();
-			var skeleton = PickSkeleton(model, note);
+			var meshes = SelectMeshes(model, out var lod);
+			if (meshes.Count == 0)
+				throw new InvalidOperationException("model has no meshes");
+			if (lod >= 0 && lod != _settings.Lod)
+				note.Add($"LOD {lod} (has no LOD {_settings.Lod})");
+			var skeleton = PickSkeleton(model.Name, meshes, note);
+			// the exporters take a metamesh: hand them one holding just the chosen LOD's meshes
+			var view = lod < 0 ? model : MeshView(model.Name, meshes);
+			return ExportView(UniqueName(model.Name), view, meshes, skeleton, note);
+		}
 
-			ModelExporter.ModelExportOption option = 0;
+		/// <summary>
+		/// Exports several models into one file named <see cref="GalleryExportSettings.CombinedName"/>. Mesh
+		/// names get their model's name as a prefix so they stay unique and show which model they came from.
+		/// Returns a short note for the log.
+		/// </summary>
+		public string ExportCombined(IReadOnlyList<Metamesh> models)
+		{
+			var note = new List<string>();
+			var name = UniqueName(string.IsNullOrWhiteSpace(_settings.CombinedName) ? "combined" : _settings.CombinedName);
+			var view = MeshView(name, new List<Mesh>());
+			var parts = new List<KeyValuePair<Metamesh, List<Mesh>>>();
+			var skeletons = new List<Skeleton>();
+			foreach (var model in models)
+			{
+				var meshes = SelectMeshes(model, out var lod);
+				if (meshes.Count == 0)
+				{
+					note.Add($"{model.Name}: skipped, no meshes");
+					continue;
+				}
+				if (lod >= 0 && lod != _settings.Lod)
+					note.Add($"{model.Name}: LOD {lod} (has no LOD {_settings.Lod})");
+				var modelNote = new List<string>();
+				skeletons.Add(PickSkeleton(model.Name, meshes, modelNote));
+				note.AddRange(modelNote.Select(n => model.Name + ": " + n));
+				parts.Add(new KeyValuePair<Metamesh, List<Mesh>>(model, meshes));
+				view.Meshes.AddRange(meshes);
+			}
+			if (parts.Count == 0)
+				throw new InvalidOperationException("none of the models has meshes");
+
+			// one file has one skeleton: rigged only when every model is rigged to the same one
+			var skeleton = skeletons[0];
+			if (skeletons.Any(s => s != skeleton))
+			{
+				skeleton = null;
+				var used = skeletons.Select(s => s?.Name ?? "static").Distinct();
+				note.Add("exported static: the models don't share one skeleton (" + string.Join(", ", used) + ")");
+			}
+			note.Insert(0, $"{parts.Count} models: " + string.Join(", ", parts.Select(p => p.Key.Name)));
+
+			// renamed for this export only; the lock keeps other exports from seeing the temporary names
+			lock (ModelExporter.SyncRoot)
+			{
+				var originalNames = view.Meshes.Select(m => m.Name).ToList();
+				try
+				{
+					var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+					foreach (var part in parts)
+					{
+						var modelName = part.Key.Name;
+						foreach (var mesh in part.Value)
+						{
+							var meshName = string.IsNullOrEmpty(mesh.Name) ? modelName
+								: mesh.Name.StartsWith(modelName, StringComparison.OrdinalIgnoreCase) ? mesh.Name
+								: modelName + "_" + mesh.Name;
+							var unique = meshName;
+							for (int i = 2; !names.Add(unique); i++)
+								unique = meshName + "_" + i;
+							mesh.Name = unique;
+						}
+					}
+					return ExportView(name, view, view.Meshes, skeleton, note);
+				}
+				finally
+				{
+					for (int i = 0; i < originalNames.Count; i++)
+						view.Meshes[i].Name = originalNames[i];
+				}
+			}
+		}
+
+		/// <summary>
+		/// The meshes of the chosen LOD (all meshes for "all LODs"). A model without that LOD uses its nearest
+		/// lower one, or its most detailed one when it only has coarser LODs. <paramref name="lod"/> is the LOD
+		/// used, -1 for all.
+		/// </summary>
+		private List<Mesh> SelectMeshes(Metamesh model, out int lod)
+		{
+			lod = -1;
+			if (_settings.Lod < 0)
+				return model.Meshes;
+			var lods = model.Meshes.Select(m => m.Lod).Distinct().ToList();
+			if (lods.Count == 0)
+				return new List<Mesh>();
+			var lower = lods.Where(l => l <= _settings.Lod).ToList();
+			var chosen = lower.Count > 0 ? lower.Max() : lods.Min();
+			lod = chosen;
+			return model.Meshes.FindAll(m => m.Lod == chosen);
+		}
+
+		/// <summary>A metamesh holding just the given meshes, so the exporters write exactly those.</summary>
+		private static Metamesh MeshView(string name, List<Mesh> meshes)
+		{
+			var view = new Metamesh { Name = name };
+			view.Meshes.AddRange(meshes);
+			return view;
+		}
+
+		/// <summary>Writes every mesh of <paramref name="view"/> to &lt;fileName&gt;.&lt;ext&gt;.</summary>
+		private string ExportView(string fileName, Metamesh view, List<Mesh> meshes, Skeleton skeleton, List<string> note)
+		{
+			var dir = _settings.OneFolderPerAsset ? Path.Combine(_settings.OutputDir, fileName) : _settings.OutputDir;
+			Directory.CreateDirectory(dir);
+			var path = Path.Combine(dir, fileName + "." + _settings.ModelExtension);
+
+			// the view only holds the meshes to export, so every LOD in it is written
+			var option = ModelExporter.ModelExportOption.ExportAllLod;
 			// one folder per asset: textures sit next to the model. otherwise: <model name>/ sub folder
 			option |= _settings.OneFolderPerAsset
 				? ModelExporter.ModelExportOption.ExportTextures
@@ -94,8 +209,6 @@ namespace TpacTool
 				option |= ModelExporter.ModelExportOption.PreferPng;
 			else if (_settings.TexturePreference == 2)
 				option |= ModelExporter.ModelExportOption.PreferDds;
-			if (_settings.AllLods)
-				option |= ModelExporter.ModelExportOption.ExportAllLod;
 			if (_settings.DiffuseOnly)
 				option |= ModelExporter.ModelExportOption.ExportDiffuseOnly;
 			if (_settings.LargerScale)
@@ -115,13 +228,13 @@ namespace TpacTool
 			{
 				if (IsBannerlordHuman(skeleton))
 				{
-					ExportToMedieval2(path, model, skeleton, option, note);
+					ExportToMedieval2(path, view, meshes, skeleton, option, note);
 					return string.Join(", ", note);
 				}
 				note.Add("Medieval 2 transfer skipped: only the human skeleton can be transferred");
 			}
 
-			ExportFile(path, model, skeleton, option);
+			ExportFile(path, view, skeleton, option);
 
 			if (skeleton != null)
 				note.Add("rigged to " + skeleton.Name);
@@ -150,14 +263,13 @@ namespace TpacTool
 		/// T-poses the model on its bannerlord skeleton (m2 skeletons are in T-pose), moves it and its weights
 		/// onto the m2 skeleton and exports it with the m2 skeleton.
 		/// </summary>
-		private void ExportToMedieval2(string path, Metamesh model, Skeleton skeleton,
+		private void ExportToMedieval2(string path, Metamesh model, List<Mesh> meshes, Skeleton skeleton,
 			ModelExporter.ModelExportOption option, List<string> note)
 		{
 			var withAnimations = _settings.M2IncludeAnimations && _settings.ModelExtension == "fbx" &&
 			                     AssimpModelExporter.IsAssimpAvailable();
 			if (_m2Skeleton == null)
 				_m2Skeleton = M2RigTransfer.LoadSkeleton(_settings.M2SkeletonPath, withAnimations, out _m2Animations);
-			var meshes = _settings.AllLods ? model.Meshes : model.Meshes.FindAll(m => m.Lod == 0);
 
 			// the m2 space is fixed (see M2RigTransfer): no axis options, and the T-pose is done here
 			option &= ~(ModelExporter.ModelExportOption.ConvertToTPose |
@@ -187,12 +299,11 @@ namespace TpacTool
 			note.AddRange(log);
 		}
 
-		private Skeleton PickSkeleton(Metamesh model, List<string> note)
+		private Skeleton PickSkeleton(string modelName, List<Mesh> meshes, List<string> note)
 		{
 			if (_settings.SkeletonMode == GallerySkeletonMode.None)
 				return null;
 
-			var meshes = _settings.AllLods ? model.Meshes : model.Meshes.FindAll(m => m.Lod == 0);
 			if (meshes.Count == 0 || meshes.All(m => m.SkinDataSize <= 0))
 				return null; // static model
 
@@ -210,7 +321,7 @@ namespace TpacTool
 			}
 			else
 			{
-				var lower = model.Name.ToLowerInvariant();
+				var lower = modelName.ToLowerInvariant();
 				var isHorse = HorseKeywords.Any(k => lower.Contains(k));
 				skeleton = isHorse ? _settings.HorseSkeleton ?? _settings.HumanSkeleton : _settings.HumanSkeleton;
 			}
