@@ -29,6 +29,34 @@ namespace TpacTool
 		}
 	}
 
+	/// <summary>One LOD in the gallery's LOD checklist.</summary>
+	public sealed class GalleryLodOption : ObservableObject
+	{
+		private readonly Action _onChanged;
+		private bool _isChecked;
+
+		public int Lod { get; }
+
+		public string Label => Lod == 0 ? "LOD 0 (most detailed)" : "LOD " + Lod;
+
+		public bool IsChecked
+		{
+			get => _isChecked;
+			set
+			{
+				if (Set(ref _isChecked, value))
+					_onChanged();
+			}
+		}
+
+		public GalleryLodOption(int lod, bool isChecked, Action onChanged)
+		{
+			Lod = lod;
+			_isChecked = isChecked;
+			_onChanged = onChanged;
+		}
+	}
+
 	public class GalleryViewModel : ViewModelBase
 	{
 		private const string SkeletonAuto = "Auto (human; horse for horse/camel gear)";
@@ -147,6 +175,26 @@ namespace TpacTool
 			}
 		}
 
+		/// <summary>
+		/// The "select all" checkbox: checked when every shown tile is selected, unchecked when none is, and
+		/// in between otherwise. Checking it selects every shown tile, unchecking clears them.
+		/// </summary>
+		public bool? AllShownSelected
+		{
+			get
+			{
+				var selected = _visibleItems.Count(i => i.IsSelected);
+				if (selected == 0)
+					return false;
+				return selected == _visibleItems.Count ? (bool?) true : null;
+			}
+			set
+			{
+				SetSelection(_visibleItems, value == true);
+				RaisePropertyChanged(nameof(AllShownSelected));
+			}
+		}
+
 		public string ExportButtonText => SelectedCount > 0 ? $"Export {SelectedCount} selected" : "Export selected";
 
 		#region Export settings
@@ -193,26 +241,74 @@ namespace TpacTool
 			set => Settings.Default.ExportModelTPoseStraightenElbows = value;
 		}
 
-		/// <summary>"LOD n" for every LOD the loaded models have, then "All LODs".</summary>
-		public string[] LodItems { get; }
+		/// <summary>A checkbox for every LOD the loaded models have.</summary>
+		public IReadOnlyList<GalleryLodOption> LodOptions { get; }
 
-		// the LOD of each LodItems entry, -1 for all
-		private readonly int[] _lodValues;
-		private int _lodIndex;
+		private List<int> CheckedLods => LodOptions.Where(o => o.IsChecked).Select(o => o.Lod).ToList();
 
-		public int LodIndex
+		public bool SeveralLodsChecked => LodOptions.Count(o => o.IsChecked) > 1;
+
+		/// <summary>With several LODs checked: one file per LOD (name_lod1, ...) instead of all LODs in one file.</summary>
+		public bool SeparateLodFiles { get; set; } = true;
+
+		private void OnLodChecked()
 		{
-			get => _lodIndex;
+			// shared with the main window's "export all LODs" option
+			Settings.Default.ExportModelAllLods = LodOptions.All(o => o.IsChecked);
+			RaisePropertyChanged(nameof(SeveralLodsChecked));
+		}
+
+		public string[] GroupingItems { get; } =
+		{
+			"One file per model",
+			"All selected models in one file",
+			"One file per texture (whole models)",
+			"One file per texture (split models)"
+		};
+
+		private int _groupingIndex;
+
+		public int GroupingIndex
+		{
+			get => _groupingIndex;
 			set
 			{
-				if (Set(ref _lodIndex, value))
-					Settings.Default.ExportModelAllLods = SelectedLod < 0;
+				if (Set(ref _groupingIndex, value))
+				{
+					RaisePropertyChanged(nameof(IsCombinedGrouping));
+					RaisePropertyChanged(nameof(SharesFiles));
+					RaisePropertyChanged(nameof(GroupingInfo));
+				}
 			}
 		}
 
-		private int SelectedLod => _lodValues[Math.Max(0, Math.Min(_lodIndex, _lodValues.Length - 1))];
+		public bool IsCombinedGrouping => GroupingIndex == (int) GalleryGrouping.Combined;
 
-		public bool CombineModels { get; set; }
+		/// <summary>Whether several models can end up in one file (every grouping but one file per model).</summary>
+		public bool SharesFiles => GroupingIndex != (int) GalleryGrouping.PerModel;
+
+		/// <summary>Leave out connected mesh parts that are byte identical to one already in the same file.</summary>
+		public bool RemoveDuplicateParts { get; set; } = true;
+
+		public string GroupingInfo
+		{
+			get
+			{
+				switch ((GalleryGrouping) GroupingIndex)
+				{
+					case GalleryGrouping.Combined:
+						return "Every selected model goes into one file; each mesh is named after its model.";
+					case GalleryGrouping.ByTexture:
+						return "Models that use the same textures share a file named after them. A model that uses " +
+						       "two textures goes to \"tex1+tex2\"; models are never split.";
+					case GalleryGrouping.SplitByTexture:
+						return "One file per texture. Every mesh goes to the file of its texture, so a model that " +
+						       "uses two textures is split between those two files.";
+					default:
+						return "Each model gets its own file.";
+				}
+			}
+		}
 
 		public string CombinedName { get; set; } = "combined";
 
@@ -389,10 +485,8 @@ namespace TpacTool
 				.Select(m => m.Lod).Where(l => l >= 0).Distinct().OrderBy(l => l).ToList();
 			if (lods.Count == 0)
 				lods.Add(0);
-			_lodValues = lods.Concat(new[] { -1 }).ToArray();
-			LodItems = lods.Select(l => l == 0 ? "LOD 0 (most detailed)" : "LOD " + l)
-				.Concat(new[] { "All LODs" }).ToArray();
-			_lodIndex = Settings.Default.ExportModelAllLods ? _lodValues.Length - 1 : 0;
+			var allLods = Settings.Default.ExportModelAllLods;
+			LodOptions = lods.Select(l => new GalleryLodOption(l, allLods || l == lods[0], OnLodChecked)).ToList();
 
 			SelectAllCommand = new RelayCommand(() => SetSelection(_visibleItems, true));
 			SelectNoneCommand = new RelayCommand(() => SetSelection(_allItems, false));
@@ -440,6 +534,7 @@ namespace TpacTool
 			                                     (!_showSelectedOnly || i.IsSelected) &&
 			                                     (terms.Length == 0 || i.Matches(terms))).ToList();
 			RaisePropertyChanged(nameof(VisibleSummary));
+			RaisePropertyChanged(nameof(AllShownSelected));
 			RebuildRows();
 		}
 
@@ -506,6 +601,7 @@ namespace TpacTool
 			RaisePropertyChanged(nameof(SelectedCount));
 			RaisePropertyChanged(nameof(SelectionSummary));
 			RaisePropertyChanged(nameof(ExportButtonText));
+			RaisePropertyChanged(nameof(AllShownSelected));
 			if (_showSelectedOnly)
 				Refilter();
 		}
@@ -541,8 +637,10 @@ namespace TpacTool
 				HorseSkeleton = _horseSkeleton,
 				ConvertToTPose = ConvertToTPose,
 				StraightenElbows = StraightenElbows,
-				Lod = SelectedLod,
-				CombineModels = CombineModels,
+				Lods = CheckedLods,
+				SeparateLodFiles = SeparateLodFiles,
+				Grouping = (GalleryGrouping) GroupingIndex,
+				RemoveDuplicateParts = RemoveDuplicateParts,
 				CombinedName = CombinedName,
 				DiffuseOnly = DiffuseOnly,
 				LargerScale = LargerScale,
@@ -579,6 +677,11 @@ namespace TpacTool
 				                "(shift-click selects a range).", "Export", MessageBoxButton.OK, MessageBoxImage.Information);
 				return;
 			}
+			if (selected.Any(i => i.Asset is Metamesh) && CheckedLods.Count == 0)
+			{
+				MessageBox.Show("Check at least one LOD to export.", "Export", MessageBoxButton.OK, MessageBoxImage.Information);
+				return;
+			}
 
 			if (string.IsNullOrWhiteSpace(OutputDir))
 				BrowseOutput();
@@ -607,20 +710,28 @@ namespace TpacTool
 				return;
 			}
 			var exporter = new GalleryExporter(settings);
-			// one job per asset; with "combine" all selected models are a single job
+			// one job per written model file (the grouping and LOD settings decide how many), then one per
+			// material / texture
 			var jobs = new List<KeyValuePair<string, Func<string>>>();
-			var models = settings.CombineModels
-				? selected.Select(i => i.Asset).OfType<Metamesh>().ToList()
-				: new List<Metamesh>();
+			var planNotes = new List<string>();
+			var models = selected.Select(i => i.Asset).OfType<Metamesh>().ToList();
 			if (models.Count > 0)
-				jobs.Add(new KeyValuePair<string, Func<string>>(
-					$"{settings.CombinedName} ({models.Count} models combined)", () => exporter.ExportCombined(models)));
+			{
+				foreach (var job in exporter.PlanModels(models, planNotes))
+					jobs.Add(new KeyValuePair<string, Func<string>>(job.Name, job.Run));
+			}
 			foreach (var item in selected)
 			{
-				if (models.Count > 0 && item.Asset is Metamesh)
+				if (item.Asset is Metamesh)
 					continue;
 				var asset = item.Asset;
 				jobs.Add(new KeyValuePair<string, Func<string>>(item.Name, () => exporter.Export(asset)));
+			}
+			if (jobs.Count == 0)
+			{
+				MessageBox.Show("Nothing to export:\n\n" + string.Join("\n", planNotes.Take(15)), "Export",
+					MessageBoxButton.OK, MessageBoxImage.Information);
+				return;
 			}
 			var cancel = new CancellationTokenSource();
 			_exportCancel = cancel;
@@ -634,7 +745,7 @@ namespace TpacTool
 			{
 				var failures = new List<string>();
 				var warnings = new List<string>();
-				var log = new List<string>();
+				var log = new List<string>(planNotes);
 				int done = 0;
 				foreach (var job in jobs)
 				{

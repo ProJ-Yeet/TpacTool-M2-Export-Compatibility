@@ -8,6 +8,10 @@
         Title="Asset Gallery" Height="760" Width="1240" MinWidth="720" MinHeight="420"
         WindowStartupLocation="CenterScreen"
         d:DataContext="{d:DesignInstance local:GalleryViewModel}">
+    <Window.InputBindings>
+        <KeyBinding Gesture="Ctrl+A" Command="{Binding SelectAllCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+A" Command="{Binding SelectNoneCommand}"/>
+    </Window.InputBindings>
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -65,6 +69,9 @@
         <Border Grid.Row="0" Grid.Column="0" Padding="8,6" Background="#FFF0F0F0" BorderBrush="#FFD5D5D5" BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="True">
                 <ComboBox DockPanel.Dock="Left" Width="100" Height="24" ItemsSource="{Binding KindItems}" SelectedIndex="{Binding KindIndex, Mode=TwoWay}"/>
+                <CheckBox DockPanel.Dock="Left" Content="Select all" Margin="10,0,0,0" VerticalAlignment="Center"
+                          IsChecked="{Binding AllShownSelected, Mode=TwoWay}"
+                          ToolTip="Select / clear every tile shown (Ctrl+A / Ctrl+Shift+A)"/>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
                     <TextBlock Text="Size" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="#FF555555"/>
                     <Slider Width="90" Minimum="64" Maximum="256" SmallChange="16" LargeChange="32" VerticalAlignment="Center"
@@ -174,15 +181,34 @@
 
                         <GroupBox Header="Models" Padding="4" Margin="0,0,0,8">
                             <StackPanel>
-                                <TextBlock Text="LOD" Foreground="#FF555555"/>
-                                <ComboBox Margin="0,2,0,6" ItemsSource="{Binding LodItems}" SelectedIndex="{Binding LodIndex, Mode=TwoWay}"
-                                          ToolTip="Which level of detail to export. A model without the chosen LOD uses its nearest lower one (the export log lists them)."/>
-                                <CheckBox x:Name="CombineBox" Content="Combine selected models into one file" Margin="0,2" IsChecked="{Binding CombineModels, Mode=TwoWay}"
-                                          ToolTip="Writes every selected model into a single file. Each mesh is named after its model.&#x0a;The file is rigged only when all models use the same skeleton; otherwise it is exported static."/>
-                                <StackPanel Margin="18,2,0,2" Visibility="{Binding IsChecked, ElementName=CombineBox, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="LODs" Foreground="#FF555555"
+                                           ToolTip="The levels of detail to export. A model without a checked LOD uses its nearest lower one (the export log lists them)."/>
+                                <ItemsControl Margin="0,2,0,2" ItemsSource="{Binding LodOptions}" Focusable="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type local:GalleryLodOption}">
+                                            <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked, Mode=TwoWay}" Margin="0,2,12,2"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <CheckBox Content="Each LOD in its own file" Margin="0,2,0,6" IsChecked="{Binding SeparateLodFiles, Mode=TwoWay}"
+                                          Visibility="{Binding SeveralLodsChecked, Converter={StaticResource BoolToVisibility}}"
+                                          ToolTip="On: name_lod0.fbx, name_lod1.fbx, ... next to each other.&#x0a;Off: all checked LODs in one file."/>
+                                <TextBlock Text="Files" Foreground="#FF555555"/>
+                                <ComboBox Margin="0,2,0,2" ItemsSource="{Binding GroupingItems}" SelectedIndex="{Binding GroupingIndex, Mode=TwoWay}"
+                                          ToolTip="How the selected models are spread over files. A file is rigged only when all of its models use the same skeleton; otherwise it is exported static."/>
+                                <TextBlock Text="{Binding GroupingInfo}" FontSize="11" Foreground="#FF777777" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                <StackPanel Margin="18,2,0,2" Visibility="{Binding IsCombinedGrouping, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="File name" Foreground="#FF555555"/>
                                     <TextBox Height="24" Margin="0,2,0,0" VerticalContentAlignment="Center" Text="{Binding CombinedName, Mode=TwoWay}"/>
                                 </StackPanel>
+                                <CheckBox Content="Remove duplicate parts" Margin="0,2" IsChecked="{Binding RemoveDuplicateParts, Mode=TwoWay}"
+                                          Visibility="{Binding SharesFiles, Converter={StaticResource BoolToVisibility}}"
+                                          ToolTip="Leaves out every connected part of a mesh (what Blender's L / select linked picks) that is&#x0a;byte identical to a part already in the same file, with the same material. A mesh that only&#x0a;repeats other parts is left out entirely. FBX and OBJ only."/>
                             </StackPanel>
                         </GroupBox>
 

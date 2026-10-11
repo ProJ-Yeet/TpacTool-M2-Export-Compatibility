@@ -19,6 +19,32 @@ namespace TpacTool
 		Specific
 	}
 
+	/// <summary>How the selected models are spread over files.</summary>
+	public enum GalleryGrouping
+	{
+		/// <summary>One file per model.</summary>
+		PerModel,
+		/// <summary>All models in one file named <see cref="GalleryExportSettings.CombinedName"/>.</summary>
+		Combined,
+		/// <summary>
+		/// One file per texture set: models that use the same textures share a file named after them
+		/// (a model using two textures goes to "tex1+tex2"). Models are not split.
+		/// </summary>
+		ByTexture,
+		/// <summary>
+		/// One file per texture: every mesh goes to the file of its texture, so a model using two textures
+		/// is split between those two files.
+		/// </summary>
+		SplitByTexture
+	}
+
+	/// <summary>One file to write: <see cref="Run"/> exports it and returns a short note for the log.</summary>
+	public sealed class GalleryExportJob
+	{
+		public string Name;
+		public Func<string> Run;
+	}
+
 	public sealed class GalleryExportSettings
 	{
 		public string OutputDir;
@@ -31,11 +57,18 @@ namespace TpacTool
 		public Skeleton HorseSkeleton;
 		public bool ConvertToTPose;
 		public bool StraightenElbows = true;
-		/// <summary>-1: all LODs. Otherwise this LOD; a model without it uses its nearest lower LOD.</summary>
-		public int Lod;
-		/// <summary>Write all selected models into one file named <see cref="CombinedName"/>.</summary>
-		public bool CombineModels;
+		/// <summary>The LODs to export. A model without one of them uses its nearest lower LOD.</summary>
+		public List<int> Lods = new List<int> { 0 };
+		/// <summary>With several LODs: each LOD goes to its own file (name_lod1, ...) instead of all into one.</summary>
+		public bool SeparateLodFiles = true;
+		public GalleryGrouping Grouping = GalleryGrouping.PerModel;
+		/// <summary>The file name for <see cref="GalleryGrouping.Combined"/>.</summary>
 		public string CombinedName = "combined";
+		/// <summary>
+		/// When several models / meshes share a file (every grouping but <see cref="GalleryGrouping.PerModel"/>):
+		/// leave out connected mesh parts that are byte identical to a part already in the file.
+		/// </summary>
+		public bool RemoveDuplicateParts = true;
 		public bool DiffuseOnly;
 		public bool LargerScale;
 		public bool NegYForward;
@@ -79,52 +112,186 @@ namespace TpacTool
 			throw new NotSupportedException("Cannot export " + asset.GetType().Name);
 		}
 
+		/// <summary>Some meshes of one model, written together.</summary>
+		private sealed class Part
+		{
+			public readonly Metamesh Model;
+			public readonly List<Mesh> Meshes;
+			/// <summary>What the LOD choice changed for this model, or null.</summary>
+			public readonly string LodNote;
+
+			public Part(Metamesh model, List<Mesh> meshes, string lodNote)
+			{
+				Model = model;
+				Meshes = meshes;
+				LodNote = lodNote;
+			}
+		}
+
 		private string ExportModel(Metamesh model)
 		{
-			var note = new List<string>();
-			var meshes = SelectMeshes(model, out var lod);
-			if (meshes.Count == 0)
-				throw new InvalidOperationException("model has no meshes");
-			if (lod >= 0 && lod != _settings.Lod)
-				note.Add($"LOD {lod} (has no LOD {_settings.Lod})");
-			var skeleton = PickSkeleton(model.Name, meshes, note);
-			// the exporters take a metamesh: hand them one holding just the chosen LOD's meshes
-			var view = lod < 0 ? model : MeshView(model.Name, meshes);
-			return ExportView(UniqueName(model.Name), view, meshes, skeleton, note);
+			var notes = new List<string>();
+			var results = PlanModels(new[] { model }, notes).Select(job => job.Run()).Where(n => n != null).ToList();
+			notes.AddRange(results);
+			return notes.Count > 0 ? string.Join(", ", notes) : null;
 		}
 
 		/// <summary>
-		/// Exports several models into one file named <see cref="GalleryExportSettings.CombinedName"/>. Mesh
-		/// names get their model's name as a prefix so they stay unique and show which model they came from.
-		/// Returns a short note for the log.
+		/// Spreads the models over files as the grouping and LOD settings say; one job per file. With separate
+		/// LOD files every model / group gets one file per LOD (name_lod0, name_lod1, ...) in a shared folder.
+		/// <paramref name="notes"/> gets what the plan left out, for the log.
 		/// </summary>
-		public string ExportCombined(IReadOnlyList<Metamesh> models)
+		public List<GalleryExportJob> PlanModels(IReadOnlyList<Metamesh> models, List<string> notes)
 		{
-			var note = new List<string>();
-			var name = UniqueName(string.IsNullOrWhiteSpace(_settings.CombinedName) ? "combined" : _settings.CombinedName);
-			var view = MeshView(name, new List<Mesh>());
-			var parts = new List<KeyValuePair<Metamesh, List<Mesh>>>();
-			var skeletons = new List<Skeleton>();
+			var lods = _settings.Lods.Where(l => l >= 0).Distinct().OrderBy(l => l).ToList();
+			if (lods.Count == 0)
+				lods.Add(0);
+			// each bucket is a set of files of its own, told apart by the suffix
+			var buckets = _settings.SeparateLodFiles && lods.Count > 1
+				? lods.Select(l => new KeyValuePair<string, List<int>>("_lod" + l, new List<int> { l })).ToList()
+				: new List<KeyValuePair<string, List<int>>> { new KeyValuePair<string, List<int>>(string.Empty, lods) };
+
+			var exported = new List<Metamesh>();
 			foreach (var model in models)
 			{
-				var meshes = SelectMeshes(model, out var lod);
-				if (meshes.Count == 0)
-				{
-					note.Add($"{model.Name}: skipped, no meshes");
-					continue;
-				}
-				if (lod >= 0 && lod != _settings.Lod)
-					note.Add($"{model.Name}: LOD {lod} (has no LOD {_settings.Lod})");
-				var modelNote = new List<string>();
-				skeletons.Add(PickSkeleton(model.Name, meshes, modelNote));
-				note.AddRange(modelNote.Select(n => model.Name + ": " + n));
-				parts.Add(new KeyValuePair<Metamesh, List<Mesh>>(model, meshes));
-				view.Meshes.AddRange(meshes);
+				if (model.Meshes.Count == 0)
+					notes.Add(model.Name + ": skipped, no meshes");
+				else
+					exported.Add(model);
 			}
-			if (parts.Count == 0)
-				throw new InvalidOperationException("none of the models has meshes");
 
-			// one file has one skeleton: rigged only when every model is rigged to the same one
+			// a model / group keeps its folder name across the LOD buckets, so its LOD files sit together
+			var modelFolders = new Dictionary<Metamesh, string>();
+			var textureFolders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			string combinedFolder = null;
+			var jobs = new List<GalleryExportJob>();
+
+			foreach (var bucket in buckets)
+			{
+				var suffix = bucket.Key;
+				var parts = new List<Part>();
+				foreach (var model in exported)
+				{
+					var meshes = SelectMeshes(model, bucket.Value, lods, out var lodNote);
+					if (meshes == null)
+						notes.Add($"{model.Name}{suffix}: skipped, {lodNote}");
+					else
+						parts.Add(new Part(model, meshes, lodNote));
+				}
+				if (parts.Count == 0)
+					continue;
+
+				switch (_settings.Grouping)
+				{
+					case GalleryGrouping.PerModel:
+						foreach (var part in parts)
+						{
+							if (!modelFolders.TryGetValue(part.Model, out var folder))
+								modelFolders[part.Model] = folder = UniqueName(part.Model.Name);
+							jobs.Add(Job(folder, folder + suffix, new List<Part> { part }));
+						}
+						break;
+
+					case GalleryGrouping.Combined:
+						if (combinedFolder == null)
+							combinedFolder = UniqueName(string.IsNullOrWhiteSpace(_settings.CombinedName) ? "combined" : _settings.CombinedName);
+						jobs.Add(Job(combinedFolder, combinedFolder + suffix, parts));
+						break;
+
+					case GalleryGrouping.ByTexture:
+					case GalleryGrouping.SplitByTexture:
+						var groups = new Dictionary<string, List<Part>>(StringComparer.OrdinalIgnoreCase);
+						foreach (var part in parts)
+						{
+							if (_settings.Grouping == GalleryGrouping.ByTexture)
+								AddToGroup(groups, TextureSetKey(part.Meshes), part);
+							else
+								foreach (var byTexture in part.Meshes.GroupBy(TextureKey, StringComparer.OrdinalIgnoreCase))
+									AddToGroup(groups, byTexture.Key, new Part(part.Model, byTexture.ToList(), part.LodNote));
+						}
+						foreach (var group in groups.OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+						{
+							if (!textureFolders.TryGetValue(group.Key, out var folder))
+								textureFolders[group.Key] = folder = UniqueName(group.Key);
+							jobs.Add(Job(folder, folder + suffix, group.Value));
+						}
+						break;
+				}
+			}
+			return jobs;
+		}
+
+		private static void AddToGroup(Dictionary<string, List<Part>> groups, string key, Part part)
+		{
+			if (!groups.TryGetValue(key, out var list))
+				groups[key] = list = new List<Part>();
+			list.Add(part);
+		}
+
+		private GalleryExportJob Job(string folder, string fileName, List<Part> parts)
+		{
+			return new GalleryExportJob
+			{
+				Name = fileName + (parts.Count > 1 ? $" ({parts.Count} models)" : string.Empty),
+				Run = () => ExportParts(folder, fileName, parts)
+			};
+		}
+
+		/// <summary>
+		/// Writes the parts into &lt;folder&gt;/&lt;fileName&gt;. With several models the mesh names get their
+		/// model's name as a prefix so they stay unique and show which model they came from. The file is rigged
+		/// only when every part uses the same skeleton. Repeated mesh parts are left out first when
+		/// <see cref="GalleryExportSettings.RemoveDuplicateParts"/> applies. Returns a short note for the log.
+		/// </summary>
+		private string ExportParts(string folder, string fileName, List<Part> parts)
+		{
+			var note = new List<string>();
+			if (!_settings.RemoveDuplicateParts || _settings.Grouping == GalleryGrouping.PerModel)
+				return WriteParts(folder, fileName, parts, note);
+			if (_settings.ModelExtension == "dae")
+			{
+				// the collada exporter writes the game's vertex streams, not the edit data trimmed here
+				note.Add("duplicate parts kept (not supported for COLLADA)");
+				return WriteParts(folder, fileName, parts, note);
+			}
+
+			// the trimmed mesh data must stay in place until the file is written
+			lock (ModelExporter.SyncRoot)
+			{
+				using (var duplicates = DuplicatePartRemoval.Apply(parts.SelectMany(p => p.Meshes)))
+				{
+					if (duplicates.RemovedParts > 0)
+					{
+						var removedMeshes = parts.SelectMany(p => p.Meshes.Where(duplicates.RemovedMeshes.Contains)
+							.Select(m => p.Model.Name + "/" + m.Name)).ToList();
+						note.Add($"removed {duplicates.RemovedParts} duplicate part{(duplicates.RemovedParts == 1 ? "" : "s")}" +
+						         (removedMeshes.Count > 0 ? $" (whole meshes: {string.Join(", ", removedMeshes)})" : ""));
+						parts = parts.Select(p => new Part(p.Model,
+								p.Meshes.Where(m => !duplicates.RemovedMeshes.Contains(m)).ToList(), p.LodNote))
+							.Where(p => p.Meshes.Count > 0).ToList();
+					}
+					return WriteParts(folder, fileName, parts, note);
+				}
+			}
+		}
+
+		private string WriteParts(string folder, string fileName, List<Part> parts, List<string> note)
+		{
+			var multi = parts.Count > 1;
+			// a single model keeps its name: the exporters recognise e.g. heads by it
+			var view = MeshView(multi ? folder : parts[0].Model.Name, new List<Mesh>());
+			var skeletons = new List<Skeleton>();
+			foreach (var part in parts)
+			{
+				var partNote = new List<string>();
+				if (part.LodNote != null)
+					partNote.Add(part.LodNote);
+				skeletons.Add(PickSkeleton(part.Model.Name, part.Meshes, partNote));
+				note.AddRange(multi ? partNote.Select(n => part.Model.Name + ": " + n) : partNote);
+				view.Meshes.AddRange(part.Meshes);
+			}
+
+			// one file has one skeleton: rigged only when every part is rigged to the same one
 			var skeleton = skeletons[0];
 			if (skeletons.Any(s => s != skeleton))
 			{
@@ -132,7 +299,9 @@ namespace TpacTool
 				var used = skeletons.Select(s => s?.Name ?? "static").Distinct();
 				note.Add("exported static: the models don't share one skeleton (" + string.Join(", ", used) + ")");
 			}
-			note.Insert(0, $"{parts.Count} models: " + string.Join(", ", parts.Select(p => p.Key.Name)));
+			if (!multi)
+				return ExportView(folder, fileName, view, skeleton, note);
+			note.Insert(0, $"{parts.Count} models: " + string.Join(", ", parts.Select(p => p.Model.Name)));
 
 			// renamed for this export only; the lock keeps other exports from seeing the temporary names
 			lock (ModelExporter.SyncRoot)
@@ -143,8 +312,8 @@ namespace TpacTool
 					var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 					foreach (var part in parts)
 					{
-						var modelName = part.Key.Name;
-						foreach (var mesh in part.Value)
+						var modelName = part.Model.Name;
+						foreach (var mesh in part.Meshes)
 						{
 							var meshName = string.IsNullOrEmpty(mesh.Name) ? modelName
 								: mesh.Name.StartsWith(modelName, StringComparison.OrdinalIgnoreCase) ? mesh.Name
@@ -155,7 +324,7 @@ namespace TpacTool
 							mesh.Name = unique;
 						}
 					}
-					return ExportView(name, view, view.Meshes, skeleton, note);
+					return ExportView(folder, fileName, view, skeleton, note);
 				}
 				finally
 				{
@@ -166,22 +335,80 @@ namespace TpacTool
 		}
 
 		/// <summary>
-		/// The meshes of the chosen LOD (all meshes for "all LODs"). A model without that LOD uses its nearest
-		/// lower one, or its most detailed one when it only has coarser LODs. <paramref name="lod"/> is the LOD
-		/// used, -1 for all.
+		/// The meshes of the <paramref name="requested"/> LODs. A model without one of them uses its nearest lower
+		/// LOD, or its most detailed one when it only has coarser LODs; <paramref name="note"/> says so. Returns
+		/// null when the LOD it would fall back to is already written for another entry of
+		/// <paramref name="allRequested"/> (separate LOD files only).
 		/// </summary>
-		private List<Mesh> SelectMeshes(Metamesh model, out int lod)
+		private static List<Mesh> SelectMeshes(Metamesh model, List<int> requested, List<int> allRequested, out string note)
 		{
-			lod = -1;
-			if (_settings.Lod < 0)
-				return model.Meshes;
-			var lods = model.Meshes.Select(m => m.Lod).Distinct().ToList();
-			if (lods.Count == 0)
-				return new List<Mesh>();
-			var lower = lods.Where(l => l <= _settings.Lod).ToList();
-			var chosen = lower.Count > 0 ? lower.Max() : lods.Min();
-			lod = chosen;
-			return model.Meshes.FindAll(m => m.Lod == chosen);
+			note = null;
+			var available = model.Meshes.Select(m => m.Lod).Distinct().ToList();
+			int Resolve(int lod)
+			{
+				var lower = available.Where(l => l <= lod).ToList();
+				return lower.Count > 0 ? lower.Max() : available.Min();
+			}
+
+			var chosen = new HashSet<int>();
+			var substitutes = new List<string>();
+			foreach (var lod in requested)
+			{
+				var used = Resolve(lod);
+				if (used != lod)
+				{
+					if (requested.Count == 1 && (allRequested.Contains(used) ||
+					                             allRequested.Any(other => other < lod && Resolve(other) == used)))
+					{
+						note = $"has no LOD {lod} (its LOD {used} is already exported)";
+						return null;
+					}
+					substitutes.Add(requested.Contains(used) ? $"has no LOD {lod}" : $"LOD {used} (has no LOD {lod})");
+				}
+				chosen.Add(used);
+			}
+			if (substitutes.Count > 0)
+				note = string.Join(", ", substitutes);
+			return model.Meshes.FindAll(m => chosen.Contains(m.Lod));
+		}
+
+		/// <summary>
+		/// The texture a mesh is grouped by: its material's diffuse texture (found by name), else the material's
+		/// first texture, else the material's name.
+		/// </summary>
+		private static string TextureKey(Mesh mesh)
+		{
+			if (mesh.Material == null || !mesh.Material.TryGetItem(out var material))
+				return "no_material";
+			Texture first = null;
+			foreach (var dependence in material.Textures.Values)
+			{
+				if (!dependence.TryGetItem(out var texture))
+					continue;
+				if (IsDiffuse(texture.Name))
+					return texture.Name;
+				if (first == null)
+					first = texture;
+			}
+			return first?.Name ?? material.Name;
+		}
+
+		/// <summary>The textures of a whole model: "tex1+tex2"; past three only the first two are named.</summary>
+		private static string TextureSetKey(List<Mesh> meshes)
+		{
+			var keys = meshes.Select(TextureKey).Distinct(StringComparer.OrdinalIgnoreCase)
+				.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+			return keys.Count <= 3
+				? string.Join("+", keys)
+				: string.Join("+", keys.Take(2)) + $"+{keys.Count - 2}_more";
+		}
+
+		private static bool IsDiffuse(string textureName)
+		{
+			var name = textureName.ToLowerInvariant();
+			return name.EndsWith("_d") || name.EndsWith("_diffuse") || name.EndsWith("_d_4k") ||
+			       name.EndsWith("_c") || name.EndsWith("_color") || name.EndsWith("_base_color") ||
+			       name.EndsWith("_c_4k");
 		}
 
 		/// <summary>A metamesh holding just the given meshes, so the exporters write exactly those.</summary>
@@ -192,10 +419,14 @@ namespace TpacTool
 			return view;
 		}
 
-		/// <summary>Writes every mesh of <paramref name="view"/> to &lt;fileName&gt;.&lt;ext&gt;.</summary>
-		private string ExportView(string fileName, Metamesh view, List<Mesh> meshes, Skeleton skeleton, List<string> note)
+		/// <summary>
+		/// Writes every mesh of <paramref name="view"/> to &lt;folder&gt;/&lt;fileName&gt;.&lt;ext&gt; (without the
+		/// folder when "one folder per asset" is off).
+		/// </summary>
+		private string ExportView(string folder, string fileName, Metamesh view, Skeleton skeleton, List<string> note)
 		{
-			var dir = _settings.OneFolderPerAsset ? Path.Combine(_settings.OutputDir, fileName) : _settings.OutputDir;
+			var meshes = view.Meshes;
+			var dir = _settings.OneFolderPerAsset ? Path.Combine(_settings.OutputDir, folder) : _settings.OutputDir;
 			Directory.CreateDirectory(dir);
 			var path = Path.Combine(dir, fileName + "." + _settings.ModelExtension);
 

@@ -84,7 +84,7 @@ namespace TpacTool.IO
 
 						if (med != null)
 						{
-							int[] posPointer = new int[mesh.VertexCount];
+							int[] posPointer = new int[med.Vertices.Length];
 
 							foreach (var position in med.Positions)
 							{
@@ -152,8 +152,9 @@ namespace TpacTool.IO
 							throw new Exception("Cannot find the edit data of " + mesh.Name);
 						}
 
-						offsetPos += mesh.PositionCount;
-						offsetNormal += mesh.VertexCount;
+						// the edit data may be trimmed for the export (e.g. duplicate parts left out), so count what was written
+						offsetPos += med.Positions.Length;
+						offsetNormal += med.Vertices.Length;
 					}
 				}
 #if NET40

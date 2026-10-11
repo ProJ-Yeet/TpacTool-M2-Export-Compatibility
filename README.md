@@ -51,14 +51,21 @@ Browse and view AnimationClip assets with detailed information.
 ##### Asset Gallery & One-Click Batch Export
 Open **View > Asset Gallery…** (Ctrl+G) after loading an asset folder to browse models, textures and materials as thumbnails. Model thumbnails are rendered with their diffuse texture.
 
-- Click tiles to select them, shift-click to select a range, double-click to open an asset in the main window. Selections are kept across the Models / Textures / Materials tabs, and *Show selected only* lists everything you picked.
+- Click tiles to select them, shift-click to select a range, double-click to open an asset in the main window. The **Select all** checkbox above the tiles (Ctrl+A) selects or clears every tile shown; Ctrl+Shift+A clears the whole selection. Selections are kept across the Models / Textures / Materials tabs, and *Show selected only* lists everything you picked.
 - Filter by name or package (space separated words must all match) and resize the thumbnails with the slider.
 - **Export N selected** writes every selected asset with all of its textures into the output folder:
   - models: `<output>/<model>/<model>.fbx` plus every texture of the model's materials (primary and secondary)
   - materials: `<output>/<material>/` with all of the material's textures
   - textures: `<output>/textures/`
-- **LOD** picks the level of detail to export (LOD 0, 1, 2, … or all LODs). A model that doesn't have the chosen LOD uses its nearest lower one, which the export log notes.
-- **Combine selected models into one file** writes all selected models into a single `<output>/<name>/<name>.fbx`, with each mesh named after its model. The file is rigged when every model uses the same skeleton (including the Medieval 2 transfer). Otherwise it is exported static.
+- **LODs** is a checklist: tick every level of detail to export. A model that doesn't have a ticked LOD uses its nearest lower one, which the export log notes. With several LODs ticked, *Each LOD in its own file* writes `name_lod0.fbx`, `name_lod1.fbx`, … side by side; turn it off to put all ticked LODs into one file.
+- **Files** decides how the selected models are spread over files:
+  - *One file per model* (default).
+  - *All selected models in one file*: a single `<output>/<name>/<name>.fbx`, each mesh named after its model.
+  - *One file per texture (whole models)*: models that use the same textures share a file named after them, e.g. `armor_d.fbx`. A model that uses two textures goes to `armor_d+cape_d.fbx`; models are never split.
+  - *One file per texture (split models)*: every mesh goes to the file of its diffuse texture, so a model that uses two textures is split between those two files. With obj1 on tex1, obj2 on tex2 and obj3 on tex1 + tex2 you get `tex1.fbx` (obj1 + obj3's tex1 meshes) and `tex2.fbx` (obj2 + obj3's tex2 meshes).
+
+  A file is rigged when every model in it uses the same skeleton (including the Medieval 2 transfer); otherwise it is exported static.
+- **Remove duplicate parts** (every option but one file per model): each connected part of a mesh (what Blender's *L* / select linked picks) that is byte identical to a part already in the same file, with the same material, is left out; a mesh that only repeats other parts is dropped entirely. The log lists what was removed. FBX and OBJ only; meshes with morph targets are left as they are.
 - Rigged models are bound to the human skeleton automatically (horse skeleton for horse / camel gear), or to the skeleton you pick. Mods that ship the human skeleton under another name (e.g. `human_skeleton_notused.004`) are recognised, and when the loaded folder has no human skeleton at all a built-in copy of Bannerlord's 28-bone human skeleton is used. An `export_log.txt` lists what was exported and any failures.
 
 ##### A-pose to T-pose
