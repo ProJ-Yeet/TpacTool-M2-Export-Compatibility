@@ -109,7 +109,7 @@ namespace TpacTool.IO
 			textures = new HashSet<Texture>();
 			foreach (var mesh in meshes)
 			{
-				if (mesh.Material.TryGetItem(out var mat1))
+				if (mesh.DrawnMaterial.TryGetItem(out var mat1))
 				{
 					materials.Add(mat1);
 					foreach (var texDep in mat1.Textures.Values)
@@ -118,7 +118,8 @@ namespace TpacTool.IO
 							textures.Add(tex);
 					}
 				}
-				if (SupportsSecondMaterial && mesh.Material.TryGetItem(out var mat2))
+				// the material the override replaces, so its textures go along too
+				if (SupportsSecondMaterial && mesh.Material.TryGetItem(out var mat2) && mat2 != mat1)
 				{
 					materials.Add(mat2);
 					foreach (var texDep in mat2.Textures.Values)

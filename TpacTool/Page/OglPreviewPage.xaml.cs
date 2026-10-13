@@ -1,4 +1,4 @@
-using OpenTK.Wpf;
+﻿using OpenTK.Wpf;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -714,7 +714,7 @@ private void OpenTkControl_Render(TimeSpan delta)
 						{
 							var rm = new Renderer.RenderMesh();
 							rm.Mesh = MeshManager.Get(mesh);
-							if (mesh.Material.TryGetItem(out var mat)
+							if (mesh.DrawnMaterial.TryGetItem(out var mat)
 							    && mat != null
 							    && mat.Textures.TryGetValue(0, out var texRef)
 							    && texRef.TryGetItem(out var tex))

@@ -31,6 +31,8 @@ namespace TpacTool.IO.Assimp
 		/// </summary>
 		public List<Animation> ExtraAnimations { set; get; }
 
+		private int _emptyMaterialIndex;
+
 		public override void Export(string path)
 		{
 			var parentPath = Directory.GetParent(path);
@@ -45,6 +47,17 @@ namespace TpacTool.IO.Assimp
 				var meshes = GetAllMeshes();
 				CollectUniqueMaterialsAndTextures(meshes, out var materials, out var textures);
 				var matMapping = ExportMaterials(materials, scene.Materials);
+				// a mesh without a material gets a plain one, not whichever material happens to come first
+				_emptyMaterialIndex = 0;
+				if (scene.Materials.Count > 0 && meshes.Any(m => !m.DrawnMaterial.TryGetItem(out var drawn) || !matMapping.ContainsKey(drawn)))
+				{
+					_emptyMaterialIndex = scene.Materials.Count;
+					scene.Materials.Add(new Material
+					{
+						Name = "empty_material", ShadingMode = ShadingMode.Phong,
+						ColorAmbient = new Color4D(0, 0, 0, 1), ColorDiffuse = new Color4D(1, 1, 1, 1)
+					});
+				}
 				var meshMapping = ExportMeshes(meshes, matMapping, scene.Meshes);
 
 				Node rootNode = new Node("Scene");
@@ -74,12 +87,33 @@ namespace TpacTool.IO.Assimp
 					}
 				}
 
-				Node modelNode = scene.Meshes.Count == 1 ? new Node(Model.Name) :
-					new Node(Model != null ? $"{Model.Name}_node" : "empty_model");
-				skeletonNode.Children.Add(modelNode);
-				for (var i = 0; i < scene.Meshes.Count; i++)
+				// with a skeleton, meshes without usable weights go into a static node beside the armature
+				var staticMeshes = Skeleton != null && SupportsSkeleton
+					? meshes.Where(m => !IsSkinned(m)).ToList()
+					: new List<TpacTool.Lib.Mesh>();
+				Node modelNode;
+				if (staticMeshes.Count == 0)
 				{
-					modelNode.MeshIndices.Add(i);
+					modelNode = scene.Meshes.Count == 1 ? new Node(Model.Name) :
+						new Node(Model != null ? $"{Model.Name}_node" : "empty_model");
+					skeletonNode.Children.Add(modelNode);
+					for (var i = 0; i < scene.Meshes.Count; i++)
+					{
+						modelNode.MeshIndices.Add(i);
+					}
+				}
+				else
+				{
+					var baseName = Model != null ? Model.Name : "empty_model";
+					var riggedMeshes = meshes.Where(m => !staticMeshes.Contains(m)).ToList();
+					modelNode = GroupNode(baseName + "_rigged", riggedMeshes, meshMapping);
+					if (riggedMeshes.Count > 0)
+						skeletonNode.Children.Add(modelNode);
+					var staticNode = GroupNode(baseName + "_static", staticMeshes, meshMapping);
+					// skinned meshes are turned by their bind matrices for -y forward: turn the static ones too
+					if (IsNegYAxisForward)
+						staticNode.Transform = NegYMatrix.ToAssimpMatrix();
+					rootNode.Children.Add(staticNode);
 				}
 
 				if (Animations != null && Animations.Count > 0)
@@ -129,6 +163,43 @@ namespace TpacTool.IO.Assimp
 		protected virtual byte[] PostProcess(Scene scene, byte[] data)
 		{
 			return data;
+		}
+
+		/// <summary>
+		/// A node holding <paramref name="meshes"/>. A single mesh is named after the mesh, since the fbx
+		/// post process finds a mesh's geometry by that name (shape keys).
+		/// </summary>
+		private static Node GroupNode(string name, List<TpacTool.Lib.Mesh> meshes,
+			Dictionary<TpacTool.Lib.Mesh, int> meshMapping)
+		{
+			var node = new Node(meshes.Count == 1 && !string.IsNullOrEmpty(meshes[0].Name) ? meshes[0].Name : name);
+			foreach (var mesh in meshes)
+				node.MeshIndices.Add(meshMapping[mesh]);
+			return node;
+		}
+
+		/// <summary>
+		/// Whether a mesh is written skinned to <see cref="AbstractModelExporter.Skeleton"/>: it has a weight
+		/// for every position and only uses bones the skeleton has. Other meshes are written static.
+		/// </summary>
+		protected bool IsSkinned(TpacTool.Lib.Mesh mesh)
+		{
+			var data = mesh.EditData?.Data;
+#pragma warning disable 612
+			var bones = data?.Bones;
+#pragma warning restore 612
+			if (Skeleton == null || bones == null || data.Positions == null || bones.Length < data.Positions.Length)
+				return false;
+			var boneCount = Skeleton.Definition.Data.Bones.Count;
+			var weighted = false;
+			foreach (var b in bones)
+			{
+				if (b.W0 > 0 && b.B0 >= boneCount || b.W1 > 0 && b.B1 >= boneCount ||
+				    b.W2 > 0 && b.B2 >= boneCount || b.W3 > 0 && b.B3 >= boneCount)
+					return false;
+				weighted |= b.W0 > 0 || b.W1 > 0 || b.W2 > 0 || b.W3 > 0;
+			}
+			return weighted;
 		}
 
 		protected virtual List<TpacTool.Lib.Mesh> GetAllMeshes()
@@ -252,14 +323,14 @@ namespace TpacTool.IO.Assimp
 				bool hasSkeleton = false;
 				int boneCount = 0;
 				SkeletonDefinitionData skelDate = null;
-				if (SupportsSkeleton && Skeleton != null)
+				if (SupportsSkeleton && Skeleton != null && IsSkinned(mesh))
 				{
 					hasSkeleton = true;
 					skelDate = Skeleton.Definition.Data;
 					//boneCount = Math.Max(skelDate.Bones.Count, data.Bones.Length);
 					boneCount = skelDate.Bones.Count;
 				}
-				else if (SupportsSkeleton && mesh.SkinDataSize > 0 && ForceExportWeight)
+				else if (SupportsSkeleton && Skeleton == null && mesh.SkinDataSize > 0 && ForceExportWeight)
 				{
 					hasSkeleton = true;
 					boneCount = data.Bones.Length;
@@ -359,8 +430,8 @@ namespace TpacTool.IO.Assimp
 					}
 				}
 
-				assMesh.MaterialIndex = 0;
-				if (!mesh.Material.IsEmpty() && matMapping.TryGetValue(mesh.Material.GetItem(), out var matIndex))
+				assMesh.MaterialIndex = _emptyMaterialIndex;
+				if (mesh.DrawnMaterial.TryGetItem(out var drawn) && matMapping.TryGetValue(drawn, out var matIndex))
 					assMesh.MaterialIndex = matIndex;
 
 				outList.Add(assMesh);

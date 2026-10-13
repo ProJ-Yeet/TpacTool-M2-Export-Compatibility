@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -465,14 +465,18 @@ namespace TpacTool
 				.OrderBy(s => s.Name).ToList();
 			var loadedHuman = BuiltInSkeleton.FindLoadedHuman(_skeletons);
 			_humanSkeleton = loadedHuman ?? BuiltInSkeleton.Human;
-			_horseSkeleton = BuiltInSkeleton.FindLoadedHorse(_skeletons);
+			var loadedHorse = BuiltInSkeleton.FindLoadedHorse(_skeletons);
+			_horseSkeleton = loadedHorse ?? BuiltInSkeleton.Horse;
 			HumanSkeletonInfo = loadedHuman != null
 				? "Human skeleton: " + loadedHuman.Name
 				: "Human skeleton: built-in copy (none in the loaded folder)";
+			if (loadedHorse == null)
+				_skeletons.Insert(0, BuiltInSkeleton.Horse);
 			if (loadedHuman == null)
 				_skeletons.Insert(0, BuiltInSkeleton.Human);
 			SkeletonItems = new[] { SkeletonAuto, SkeletonNone }
-				.Concat(_skeletons.Select(s => "Always: " + (s == BuiltInSkeleton.Human ? BuiltInSkeleton.HumanName : s.Name)))
+				.Concat(_skeletons.Select(s => "Always: " + (s == BuiltInSkeleton.Human ? BuiltInSkeleton.HumanName
+					: s == BuiltInSkeleton.Horse ? BuiltInSkeleton.HorseName : s.Name)))
 				.ToArray();
 
 			foreach (var asset in assetManager.LoadedAssets.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
@@ -653,6 +657,9 @@ namespace TpacTool
 				if (index < 0)
 					throw new InvalidOperationException("No Medieval 2 skeleton selected: pick the toolkit's armatures folder first.");
 				settings.M2SkeletonPath = M2RigTransfer.FindSkeletonFiles(EffectiveM2Dir)[index];
+				// horses go onto the vanilla horse (Horse.glb in the armatures folder, else the bundled one)
+				settings.M2HorseSkeletonPath = M2RigTransfer.FindHorseSkeletonFile(EffectiveM2Dir) ??
+				                               M2RigTransfer.FindHorseSkeletonFile(M2RigTransfer.BundledSkeletonsDir);
 				settings.M2IncludeAnimations = M2IncludeAnimations;
 				settings.ConvertToTPose = true;
 			}
@@ -787,6 +794,9 @@ namespace TpacTool
 					// the log is a convenience only
 				}
 
+				// the export loaded every model's meshes and textures: give that memory back now
+				MemoryGuard.Collect();
+
 				dispatcher.BeginInvoke(new Action(() =>
 				{
 					IsExporting = false;
@@ -824,6 +834,7 @@ namespace TpacTool
 		{
 			_exportCancel?.Cancel();
 			ThumbnailService.Clear();
+			ThreadPool.QueueUserWorkItem(_ => MemoryGuard.Collect());
 			base.Cleanup();
 		}
 	}

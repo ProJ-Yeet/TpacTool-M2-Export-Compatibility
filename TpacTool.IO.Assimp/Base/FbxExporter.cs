@@ -404,7 +404,6 @@ namespace TpacTool.IO.Assimp
 
 						var count = mesh.VertexCount;
 						var indiceArray = new List<int>(count);
-						var weightArray = new List<float>(count);
 						var posArray = new List<float>(count * 3);
 						var normalArray = new List<float>(count * 3);
 
@@ -428,7 +427,6 @@ namespace TpacTool.IO.Assimp
 							indiceArray.Clear();
 							posArray.Clear();
 							normalArray.Clear();
-							weightArray.Clear();
 
 							for (int j = 0; j < count; j++)
 							{
@@ -449,8 +447,6 @@ namespace TpacTool.IO.Assimp
 									normalArray.Add(delta.X);
 									normalArray.Add(delta.Y);
 									normalArray.Add(delta.Z);
-
-									weightArray.Add(100f);
 								}
 							}
 
@@ -492,9 +488,11 @@ namespace TpacTool.IO.Assimp
 							channelDeformPercentNode.Value = new FloatToken(0f);
 							channelNode.AddNode(channelDeformPercentNode);
 
+							// one weight per shape of the channel (not per vertex): a shape that moves no
+							// vertex would otherwise get an empty array, which blender refuses to import
 							channelNode.AddNode(new FbxNode(new IdentifierToken("FullWeights"))
 							{
-								Value = new FloatArrayToken(weightArray.ToArray())
+								Value = new FloatArrayToken(new[] { 100f })
 							});
 
 							channelNode.AddNode(null);

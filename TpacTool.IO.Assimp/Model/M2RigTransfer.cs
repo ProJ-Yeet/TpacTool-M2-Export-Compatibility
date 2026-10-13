@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,7 +28,7 @@ namespace TpacTool.IO.Assimp
 	/// bones go to bone_R* and nothing is mirrored. (mirror: true is the old behaviour - mirrored in y,
 	/// facing the other way, with the winding flipped.)
 	/// </summary>
-	public static class M2RigTransfer
+	public static partial class M2RigTransfer
 	{
 		// bannerlord bone -> m2 bone (case-insensitive; "{s}" is the side: R / L)
 		private static readonly Dictionary<string, string> BoneMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -85,10 +85,22 @@ namespace TpacTool.IO.Assimp
 				.Where(f =>
 				{
 					var stem = Path.GetFileNameWithoutExtension(f).ToLowerInvariant();
-					return !stem.EndsWith("_sample") && stem != "equipment";
+					return !stem.EndsWith("_sample") && stem != "equipment" && stem != HorseFileStem;
 				})
 				.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
 				.ToList();
+		}
+
+		private const string HorseFileStem = "horse";
+
+		/// <summary>The vanilla horse armature (Horse.glb) in an armatures folder, or null.</summary>
+		[CanBeNull]
+		public static string FindHorseSkeletonFile([CanBeNull] string armaturesDir)
+		{
+			if (string.IsNullOrWhiteSpace(armaturesDir) || !Directory.Exists(armaturesDir))
+				return null;
+			return Directory.GetFiles(armaturesDir, "*.glb").FirstOrDefault(f =>
+				Path.GetFileNameWithoutExtension(f).Equals(HorseFileStem, StringComparison.OrdinalIgnoreCase));
 		}
 
 		/// <summary>

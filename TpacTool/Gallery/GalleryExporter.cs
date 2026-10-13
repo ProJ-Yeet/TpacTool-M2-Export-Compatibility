@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using TpacTool.IO;
 using TpacTool.IO.Assimp;
 using TpacTool.Lib;
@@ -77,6 +78,8 @@ namespace TpacTool
 		public string M2SkeletonPath;
 		/// <summary>Write the m2 skeleton's animations into the fbx too.</summary>
 		public bool M2IncludeAnimations = true;
+		/// <summary>With <see cref="M2SkeletonPath"/>: rigged horse models are transferred onto this m2 horse (.glb).</summary>
+		public string M2HorseSkeletonPath;
 	}
 
 	/// <summary>
@@ -85,12 +88,17 @@ namespace TpacTool
 	/// </summary>
 	public sealed class GalleryExporter
 	{
-		private static readonly string[] HorseKeywords = { "horse", "camel", "mule", "donkey", "pony" };
+		private static readonly string[] HorseKeywords =
+			{ "horse", "camel", "mule", "donkey", "pony", "barding", "caparison", "saddle", "harness" };
 
 		private readonly GalleryExportSettings _settings;
 		private readonly HashSet<string> _usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		private Skeleton _m2Skeleton;
 		private List<global::Assimp.Animation> _m2Animations;
+		/// <summary>The m2 horse clip written with horse exports.</summary>
+		private const string HorseClip = "fs_horse_walk";
+		private Skeleton _m2Horse;
+		private List<global::Assimp.Animation> _m2HorseAnimations;
 
 		public GalleryExporter(GalleryExportSettings settings)
 		{
@@ -281,23 +289,53 @@ namespace TpacTool
 			// a single model keeps its name: the exporters recognise e.g. heads by it
 			var view = MeshView(multi ? folder : parts[0].Model.Name, new List<Mesh>());
 			var skeletons = new List<Skeleton>();
+			var staticParts = new List<Part>();
 			foreach (var part in parts)
 			{
 				var partNote = new List<string>();
 				if (part.LodNote != null)
 					partNote.Add(part.LodNote);
-				skeletons.Add(PickSkeleton(part.Model.Name, part.Meshes, partNote));
-				note.AddRange(multi ? partNote.Select(n => part.Model.Name + ": " + n) : partNote);
 				view.Meshes.AddRange(part.Meshes);
+				// in a shared file static models (weapons, shields, ...) don't decide the skeleton: they go along with it
+				if (multi && IsStatic(part.Meshes))
+					staticParts.Add(part);
+				else
+					skeletons.Add(PickSkeleton(part.Model.Name, part.Meshes, partNote));
+				note.AddRange(multi ? partNote.Select(n => part.Model.Name + ": " + n) : partNote);
 			}
 
-			// one file has one skeleton: rigged only when every part is rigged to the same one
-			var skeleton = skeletons[0];
-			if (skeletons.Any(s => s != skeleton))
+			var skeleton = skeletons.FirstOrDefault();
+			// parts written static in a rigged file, because they aren't rigged to its skeleton
+			var demoted = new List<Part>();
+			if (SplitsStatic)
 			{
+				// the file is rigged to the skeleton most rigged meshes use; the rest goes to its static part
+				var riggedParts = parts.Where(p => !staticParts.Contains(p)).ToList();
+				skeleton = riggedParts.Select((p, i) => new { Skeleton = skeletons[i], Meshes = p.Meshes.Count })
+					.Where(s => s.Skeleton != null)
+					.GroupBy(s => s.Skeleton)
+					.OrderByDescending(g => g.Sum(s => s.Meshes))
+					.Select(g => g.Key)
+					.FirstOrDefault();
+				if (skeleton != null)
+				{
+					for (int i = 0; i < riggedParts.Count; i++)
+					{
+						if (skeletons[i] == skeleton)
+							continue;
+						demoted.Add(riggedParts[i]);
+						if (skeletons[i] != null)
+							note.Add($"{riggedParts[i].Model.Name}: written static (rigged to {skeletons[i].Name}, " +
+							         $"the file is rigged to {skeleton.Name})");
+					}
+				}
+			}
+			else if (skeletons.Any(s => s != skeleton))
+			{
+				// one file has one skeleton: rigged only when every rigged part is rigged to the same one
 				skeleton = null;
 				var used = skeletons.Select(s => s?.Name ?? "static").Distinct();
-				note.Add("exported static: the models don't share one skeleton (" + string.Join(", ", used) + ")");
+				note.Add("exported static: the rigged models don't share one skeleton (" + string.Join(", ", used) + ")");
 			}
 			if (!multi)
 				return ExportView(folder, fileName, view, skeleton, note);
@@ -307,8 +345,23 @@ namespace TpacTool
 			lock (ModelExporter.SyncRoot)
 			{
 				var originalNames = view.Meshes.Select(m => m.Name).ToList();
+				var restores = new List<Action>();
 				try
 				{
+					if (skeleton != null && demoted.Count > 0)
+						Unbind(demoted, restores);
+					if (skeleton != null && staticParts.Count > 0)
+					{
+						// split files keep static models static, except the ones held in a hand
+						var bound = SplitsStatic
+							? staticParts.Where(p => GetHold(p.Model.Name) != Hold.Root).ToList()
+							: staticParts;
+						if (bound.Count > 0)
+							note.Add(BindStatic(bound, skeleton, restores));
+						if (bound.Count < staticParts.Count)
+							note.Add($"{staticParts.Count - bound.Count} static model{(staticParts.Count - bound.Count == 1 ? "" : "s")} " +
+							         "in the static part");
+					}
 					var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 					foreach (var part in parts)
 					{
@@ -330,7 +383,166 @@ namespace TpacTool
 				{
 					for (int i = 0; i < originalNames.Count; i++)
 						view.Meshes[i].Name = originalNames[i];
+					foreach (var restore in restores)
+						restore();
 				}
+			}
+		}
+
+		private static bool IsStatic(List<Mesh> meshes)
+		{
+			return meshes.All(m => m.SkinDataSize <= 0);
+		}
+
+		/// <summary>
+		/// Whether a rigged file can hold static meshes too: the assimp fbx exporter writes meshes without
+		/// weights into a static node beside the armature, so a rigged file has a rigged and a static part.
+		/// </summary>
+		private bool SplitsStatic => _settings.ModelExtension == "fbx" && AssimpModelExporter.IsAssimpAvailable();
+
+#pragma warning disable 612
+		/// <summary>Drops the weights of these parts for this export, so they are written static.</summary>
+		private static void Unbind(List<Part> parts, List<Action> restores)
+		{
+			var visited = new HashSet<MeshEditData>();
+			foreach (var mesh in parts.SelectMany(p => p.Meshes))
+			{
+				var data = mesh.EditData?.Data;
+				if (data == null || !visited.Add(data))
+					continue;
+				SaveForRestore(data, restores);
+				data.Bones = null;
+			}
+		}
+#pragma warning restore 612
+
+		private enum Hold { Root, LeftHand, RightHand }
+
+		private static readonly string[] LeftHandWords = { "shield", "buckler" };
+
+		private static readonly string[] RightHandWords =
+		{
+			"sword", "blade", "guard", "handle", "pommel", "lance", "spear", "pike", "javelin", "axe", "mace",
+			"hammer", "club", "dagger", "knife", "glaive", "halberd", "polearm", "staff", "crossbow", "weapon"
+		};
+
+		/// <summary>Which hand holds a static model, from the words of its name.</summary>
+		private static Hold GetHold(string modelName)
+		{
+			var words = modelName.ToLowerInvariant().Split('_', ' ', '.', '-');
+			if (words.Any(w => LeftHandWords.Any(k => w.Contains(k))))
+				return Hold.LeftHand;
+			if (words.Any(w => w.Contains("crossbow")))
+				return Hold.RightHand;
+			if (words.Any(w => w.EndsWith("bow"))) // bows are held in the left hand
+				return Hold.LeftHand;
+			if (words.Any(w => RightHandWords.Any(k => w.Contains(k))))
+				return Hold.RightHand;
+			return Hold.Root;
+		}
+
+#pragma warning disable 612
+		/// <summary>
+		/// Binds static models to <paramref name="skeleton"/> so they can go into a rigged file (the exporters
+		/// write one weight set per mesh): shields and bows to l_hand, other weapons to r_hand, anything else to
+		/// the root bone. A model held in a hand is moved by the hand's rest frame, so its origin (the grip in
+		/// bannerlord) sits on the hand joint, and it follows the hand through the T-pose and the Medieval 2
+		/// transfer. <paramref name="restores"/> undoes the changes and keeps the weakly loaded data alive until
+		/// then. Returns a note for the log.
+		/// </summary>
+		private static string BindStatic(List<Part> parts, Skeleton skeleton,
+			List<Action> restores)
+		{
+			var definition = skeleton.Definition.Data;
+			var bones = definition.Bones;
+			// the same bone space the exporters and the T-pose use
+			var globals = definition.CreateBoneMatrices(TPoseConverter.IsIgnoreScaleSkeleton(skeleton));
+			int Find(string boneName) =>
+				bones.FindIndex(b => string.Equals(b.Name, boneName, StringComparison.OrdinalIgnoreCase));
+			var leftHand = Find("l_hand");
+			var rightHand = Find("r_hand");
+
+			var counts = new Dictionary<string, int>();
+			var visited = new HashSet<MeshEditData>();
+			foreach (var part in parts)
+			{
+				var hold = GetHold(part.Model.Name);
+				var bone = hold == Hold.LeftHand ? leftHand : hold == Hold.RightHand ? rightHand : -1;
+				var inHand = bone >= 0;
+				if (!inHand)
+					bone = 0;
+				var boneName = bones[bone].Name;
+				counts[boneName] = (counts.TryGetValue(boneName, out var count) ? count : 0) + 1;
+				var frame = RigidFrame(globals[bone]);
+
+				foreach (var mesh in part.Meshes)
+				{
+					var data = mesh.EditData?.Data;
+					if (data == null || !visited.Add(data))
+						continue;
+					SaveForRestore(data, restores);
+					if (inHand)
+						Transform(data, frame);
+					var weights = new MeshEditData.Bone[data.Positions.Length];
+					for (int i = 0; i < weights.Length; i++)
+					{
+						weights[i].W0 = 1f;
+						weights[i].B0 = (byte) bone;
+					}
+					data.Bones = weights;
+				}
+			}
+			return "static models bound to " + string.Join(", ", counts.Select(p => $"{p.Key} ({p.Value})"));
+		}
+
+		private static void SaveForRestore(MeshEditData data, List<Action> restores)
+		{
+			var positions = data.Positions;
+			var vertices = data.Vertices;
+			var weights = data.Bones;
+			var frames = data.MorphFrames.Select(f => Tuple.Create(f, f.Positions, f.Normals)).ToList();
+			restores.Add(() =>
+			{
+				data.Positions = positions;
+				data.Vertices = vertices;
+				data.Bones = weights;
+				foreach (var frame in frames)
+				{
+					frame.Item1.Positions = frame.Item2;
+					frame.Item1.Normals = frame.Item3;
+				}
+			});
+		}
+#pragma warning restore 612
+
+		/// <summary>The rotation and translation of a bone frame, without its scale.</summary>
+		private static Matrix4x4 RigidFrame(Matrix4x4 frame)
+		{
+			if (!Matrix4x4.Decompose(frame, out _, out var rotation, out var translation))
+				return frame;
+			return Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(rotation)) * Matrix4x4.CreateTranslation(translation);
+		}
+
+		/// <summary>Moves a mesh (positions, normals, tangents and morph targets) by a rigid frame.</summary>
+		private static void Transform(MeshEditData data, Matrix4x4 frame)
+		{
+			Vector4 Point(Vector4 p) => new Vector4(Vector3.Transform(new Vector3(p.X, p.Y, p.Z), frame), p.W);
+			Vector4 Direction(Vector4 d) => new Vector4(Vector3.TransformNormal(new Vector3(d.X, d.Y, d.Z), frame), d.W);
+
+			data.Positions = data.Positions.Select(Point).ToArray();
+			var vertices = (MeshEditData.Vertex[]) data.Vertices.Clone();
+			for (int i = 0; i < vertices.Length; i++)
+			{
+				vertices[i].Normal = Direction(vertices[i].Normal);
+				vertices[i].Tangent = Direction(vertices[i].Tangent);
+				vertices[i].Binormal = Direction(vertices[i].Binormal);
+				vertices[i].Padding = Direction(vertices[i].Padding);
+			}
+			data.Vertices = vertices;
+			foreach (var morph in data.MorphFrames)
+			{
+				morph.Positions = morph.Positions?.Select(Point).ToArray();
+				morph.Normals = morph.Normals?.Select(Direction).ToArray();
 			}
 		}
 
@@ -378,7 +590,7 @@ namespace TpacTool
 		/// </summary>
 		private static string TextureKey(Mesh mesh)
 		{
-			if (mesh.Material == null || !mesh.Material.TryGetItem(out var material))
+			if (!mesh.DrawnMaterial.TryGetItem(out var material))
 				return "no_material";
 			Texture first = null;
 			foreach (var dependence in material.Textures.Values)
@@ -462,7 +674,12 @@ namespace TpacTool
 					ExportToMedieval2(path, view, meshes, skeleton, option, note);
 					return string.Join(", ", note);
 				}
-				note.Add("Medieval 2 transfer skipped: only the human skeleton can be transferred");
+				if (M2RigTransfer.IsBannerlordHorse(skeleton) && !string.IsNullOrEmpty(_settings.M2HorseSkeletonPath))
+				{
+					ExportHorseToMedieval2(path, view, meshes, skeleton, option, note);
+					return string.Join(", ", note);
+				}
+				note.Add("Medieval 2 transfer skipped: only the human and horse skeletons can be transferred");
 			}
 
 			ExportFile(path, view, skeleton, option);
@@ -530,6 +747,45 @@ namespace TpacTool
 			note.AddRange(log);
 		}
 
+		/// <summary>
+		/// Moves a bannerlord horse model and its weights onto the vanilla m2 horse and exports it with that
+		/// skeleton (horses have no A-pose to undo).
+		/// </summary>
+		private void ExportHorseToMedieval2(string path, Metamesh model, List<Mesh> meshes, Skeleton skeleton,
+			ModelExporter.ModelExportOption option, List<string> note)
+		{
+			var withAnimations = _settings.M2IncludeAnimations && _settings.ModelExtension == "fbx" &&
+			                     AssimpModelExporter.IsAssimpAvailable();
+			if (_m2Horse == null)
+			{
+				_m2Horse = M2RigTransfer.LoadSkeleton(_settings.M2HorseSkeletonPath, withAnimations, out var clips);
+				// horses get the walk: the clip to check a horse against in blender
+				var walk = clips.Where(c => c.Name.EndsWith(HorseClip, StringComparison.OrdinalIgnoreCase)).ToList();
+				_m2HorseAnimations = walk.Count > 0 ? walk : clips;
+			}
+
+			option &= ~(ModelExporter.ModelExportOption.ConvertToTPose |
+			            ModelExporter.ModelExportOption.KeepElbowBend |
+			            ModelExporter.ModelExportOption.NegYAxisForward |
+			            ModelExporter.ModelExportOption.YAxisUp |
+			            ModelExporter.ModelExportOption.LargerSize);
+
+			List<string> log;
+			lock (ModelExporter.SyncRoot)
+			{
+				using (M2RigTransfer.ApplyHorse(skeleton, _m2Horse, meshes, out log))
+				{
+					if (withAnimations)
+						AssimpModelExporter.ExportToFile(path, model, _m2Horse, _m2HorseAnimations, option);
+					else
+						ExportFile(path, model, _m2Horse, option);
+				}
+			}
+			note.Add($"transferred from {skeleton.Name} to the Medieval 2 horse {_m2Horse.Name}" +
+			         (withAnimations ? " with " + string.Join(", ", _m2HorseAnimations.Select(a => a.Name)) : ""));
+			note.AddRange(log);
+		}
+
 		private Skeleton PickSkeleton(string modelName, List<Mesh> meshes, List<string> note)
 		{
 			if (_settings.SkeletonMode == GallerySkeletonMode.None)
@@ -538,8 +794,22 @@ namespace TpacTool
 			if (meshes.Count == 0 || meshes.All(m => m.SkinDataSize <= 0))
 				return null; // static model
 
-			// the exporters write one weight set per mesh: every exported mesh must be skinned
-			if (meshes.Any(m => m.SkinDataSize <= 0 || !HasWeights(m)))
+			if (SplitsStatic)
+			{
+				// the skinned meshes decide the skeleton, the others go to the file's static part
+				var skinned = meshes.Where(m => m.SkinDataSize > 0 && HasWeights(m)).ToList();
+				if (skinned.Count == 0)
+				{
+					note.Add("exported static: no mesh has weights");
+					return null;
+				}
+				if (skinned.Count < meshes.Count)
+					note.Add($"{meshes.Count - skinned.Count} unskinned mesh{(meshes.Count - skinned.Count == 1 ? "" : "es")} " +
+					         "in the static part");
+				meshes = skinned;
+			}
+			// the other exporters write one weight set per mesh: every exported mesh must be skinned
+			else if (meshes.Any(m => m.SkinDataSize <= 0 || !HasWeights(m)))
 			{
 				note.Add("exported static: not every mesh is skinned");
 				return null;
@@ -554,6 +824,13 @@ namespace TpacTool
 			{
 				var lower = modelName.ToLowerInvariant();
 				var isHorse = HorseKeywords.Any(k => lower.Contains(k));
+				if (isHorse && _settings.HorseSkeleton == null && meshes.Any(m => MaxBoneIndex(m) >=
+					    (_settings.HumanSkeleton?.Definition?.Data?.Bones.Count ?? 0)))
+				{
+					// horse gear rigged past the human bones: only bannerlord's horse_skeleton (Native module) fits
+					note.Add("exported static: horse_skeleton not loaded (load the Native module's AssetPackages too)");
+					return null;
+				}
 				skeleton = isHorse ? _settings.HorseSkeleton ?? _settings.HumanSkeleton : _settings.HumanSkeleton;
 			}
 

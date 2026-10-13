@@ -31,8 +31,17 @@ namespace TpacTool.Lib
 		[NotNull]
 		public AssetDependence<Material> Material { set; get; }
 
+		/// <summary>
+		/// A per-mesh material override: when set, the mesh is drawn with it instead of
+		/// <see cref="Material"/> (e.g. warg_low_fur_with_saddle_3 -> warg_fur_3, a bow's own texture set).
+		/// </summary>
 		[NotNull]
 		public AssetDependence<Material> SecondMaterial { set; get; }
+
+		/// <summary>The material the mesh is drawn with: <see cref="SecondMaterial"/> when it is set and loaded, else <see cref="Material"/>.</summary>
+		[NotNull]
+		public AssetDependence<Material> DrawnMaterial =>
+			SecondMaterial != null && SecondMaterial.TryGetItem(out _) ? SecondMaterial : Material;
 
 		public Vector4 FactorColor { set; get; }
 

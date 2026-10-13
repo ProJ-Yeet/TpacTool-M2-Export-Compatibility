@@ -491,7 +491,7 @@ namespace TpacTool.IO
 					{
 						if (geoName == string.Empty)
 							geoName = pair.Key.Name;
-						if (pair.Key.Material.TryGetItem(out var mat))
+						if (pair.Key.DrawnMaterial.TryGetItem(out var mat))
 						{
 							var matBind = new instance_material();
 							matBind.symbol = mat.Name + "-material";
@@ -744,7 +744,7 @@ namespace TpacTool.IO
 			foreach (var mesh in meshes)
 			{
 				var indices = new triangles();
-				if (mesh.Material.TryGetItem(out var mat))
+				if (mesh.DrawnMaterial.TryGetItem(out var mat))
 					indices.material = mat.Name + "-material";
 				else
 					indices.material = String.Empty;

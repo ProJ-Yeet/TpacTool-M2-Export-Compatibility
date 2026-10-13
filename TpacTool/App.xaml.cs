@@ -24,6 +24,7 @@ namespace TpacTool
 		static App()
 		{
 			DispatcherHelper.Initialize();
+			MemoryGuard.Start();
 			if (Settings.Default.RecentWorkDirs == null)
 				Settings.Default.RecentWorkDirs = new StringCollection();
 

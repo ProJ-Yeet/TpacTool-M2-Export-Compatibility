@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -305,7 +305,7 @@ namespace TpacTool
 					// mods ship the human skeleton under other names (e.g. human_skeleton_notused.004);
 					// without any, fall back to the built-in copy of bannerlord's human skeleton
 					_human_skeleton = BuiltInSkeleton.FindLoadedHuman(_skeletons) ?? BuiltInSkeleton.Human;
-					_horse_skeleton = BuiltInSkeleton.FindLoadedHorse(_skeletons);
+					_horse_skeleton = BuiltInSkeleton.FindLoadedHorse(_skeletons) ?? BuiltInSkeleton.Horse;
 					RaisePropertyChanged("Skeletons");
 					//SelectedSkeletonIndex = 0;
 					//RaisePropertyChanged("SelectedSkeletonIndex");

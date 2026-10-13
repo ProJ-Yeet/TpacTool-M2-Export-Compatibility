@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -243,7 +243,7 @@ namespace TpacTool
 		private static MeshGeometry ReadGeometry(Mesh mesh)
 		{
 			var result = new MeshGeometry();
-			mesh.Material.TryGetItem(out result.Material);
+			mesh.DrawnMaterial.TryGetItem(out result.Material);
 
 			var stream = mesh.VertexStream?.Data;
 			if (stream?.Positions != null && stream.Indices != null && stream.Positions.Length > 0)

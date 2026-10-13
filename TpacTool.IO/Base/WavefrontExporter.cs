@@ -45,7 +45,7 @@ namespace TpacTool.IO
 				var definedMats = new HashSet<Material>();
 				foreach (var mesh in meshes)
 				{
-					if (mesh.Material.TryGetItem(out var mat))
+					if (mesh.DrawnMaterial.TryGetItem(out var mat))
 					{
 						if (!definedMats.Contains(mat))
 						{
@@ -73,7 +73,7 @@ namespace TpacTool.IO
 					{
 						stream.Write("s 1\n");
 
-						if (mesh.Material.TryGetItem(out var mat))
+						if (mesh.DrawnMaterial.TryGetItem(out var mat))
 						{
 							stream.Write("usemtl ");
 							stream.Write(mat.Name);
